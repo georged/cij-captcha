@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- Dataverse plugins must target .NET Framework 4.6.2 -->
+    <TargetFramework>net462</TargetFramework>
+    <RootNamespace>CijCaptcha</RootNamespace>
+    <AssemblyName>CijCaptcha</AssemblyName>
+    <Nullable>disable</Nullable>
+    <!-- Strong-name signing is REQUIRED by Dataverse.
+         Generate once with: sn -k CijCaptcha.snk
+         Commit the .snk file (or store it in a secrets manager). -->
+    <SignAssembly>true</SignAssembly>
+    <AssemblyOriginatorKeyFile>CijCaptcha.snk</AssemblyOriginatorKeyFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Dataverse SDK – brings in IPlugin, ITracingService, etc. -->
+    <PackageReference Include="Microsoft.CrmSdk.CoreAssemblies" Version="9.0.2.49" />
+    <!-- System.Net.Http is not included in the .NET 4.6.2 SDK by default -->
+    <PackageReference Include="System.Net.Http" Version="4.3.4" />
+  </ItemGroup>
+
+</Project>

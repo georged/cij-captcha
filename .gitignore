@@ -1,0 +1,10 @@
+# Strong-name key
+plugin/CijCaptcha.snk
+
+# Build outputs
+plugin/bin/
+plugin/obj/
+
+# OS
+.DS_Store
+Thumbs.db

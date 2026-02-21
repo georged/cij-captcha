@@ -1,0 +1,36 @@
+{
+  "appId": "2a1b2aaa-d761-48ee-a3c4-f206d0cf2344",
+  "appDisplayName": "CIJ Captcha Configuration",
+  "description": null,
+  "environmentId": "bf8a03b3-337d-e0bb-a331-346bb6778c06",
+  "buildPath": "./dist",
+  "buildEntryPoint": "index.html",
+  "logoPath": "Default",
+  "localAppUrl": "http://localhost:5173/",
+  "region": "prod",
+  "connectionReferences": {},
+  "databaseReferences": {
+    "default.cds": {
+      "dataSources": {
+        "plug_intypes": {
+          "entitySetName": "plugintypes",
+          "logicalName": "plugintype"
+        },
+        "sdkmessages": {
+          "entitySetName": "sdkmessages",
+          "logicalName": "sdkmessage"
+        },
+        "sdkmessageprocessingsteps": {
+          "entitySetName": "sdkmessageprocessingsteps",
+          "logicalName": "sdkmessageprocessingstep"
+        },
+        "sdkmessageprocessingstepsecureconfigurations": {
+          "entitySetName": "sdkmessageprocessingstepsecureconfigs",
+          "logicalName": "sdkmessageprocessingstepsecureconfig"
+        }
+      },
+      "environmentVariableName": ""
+    }
+  },
+  "version": "1.0"
+}

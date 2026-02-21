@@ -4,7 +4,7 @@ VisualStudioVersion = 17.5.2.0
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "plugin", "plugin", "{7F42074E-682A-A599-6CDB-8399CB51B8EF}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CijCaptcha", "plugin\CijCaptcha.csproj", "{1B8981D9-DD02-ED41-BD02-3BE632E10F33}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Georged.Cij.Captcha", "plugin\Georged.Cij.Captcha.csproj", "{1B8981D9-DD02-ED41-BD02-3BE632E10F33}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution

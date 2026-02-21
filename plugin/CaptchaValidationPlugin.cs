@@ -9,7 +9,7 @@ using System.Text;
 using System.Text.Json.Serialization;
 using Microsoft.Xrm.Sdk;
 
-namespace CijCaptcha
+namespace Georged.Cij.Captcha
 {
     /// <summary>
     /// Supported CAPTCHA providers.
@@ -28,8 +28,8 @@ namespace CijCaptcha
     /// Customer Insights Journeys (CIJ) embedded form.
     ///
     /// Supports:
-    ///   • Google reCAPTCHA v3   — reads field  g-recaptcha-response
-    ///   • Cloudflare Turnstile  — reads field  cf-turnstile-response
+    ///   • Google reCAPTCHA v3   
+    ///   • Cloudflare Turnstile 
     ///
     /// Registration details (Plugin Registration Tool)
     /// ────────────────────────────────────────────────

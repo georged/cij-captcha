@@ -11,6 +11,9 @@
          Commit the .snk file (or store it in a secrets manager). -->
     <SignAssembly>true</SignAssembly>
     <AssemblyOriginatorKeyFile>CijCaptcha.snk</AssemblyOriginatorKeyFile>
+    <Version>$(VersionPrefix)</Version>
+    <AssemblyVersion>1.0.0.7</AssemblyVersion>
+    <FileVersion>1.0.0.7</FileVersion>
   </PropertyGroup>
 
   <ItemGroup>

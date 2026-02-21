@@ -1,10 +1,12 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Net.Http;
 using System.Runtime.Serialization;
 using System.Runtime.Serialization.Json;
 using System.Text;
+using System.Text.Json.Serialization;
 using Microsoft.Xrm.Sdk;
 
 namespace CijCaptcha
@@ -57,8 +59,7 @@ namespace CijCaptcha
         private const string TurnstileVerifyUrl = "https://challenges.cloudflare.com/turnstile/v0/siteverify";
 
         // ── Form field names (must match the hidden field name on the CIJ form) ─
-        private const string RecaptchaFieldName = "g-recaptcha-response";
-        private const string TurnstileFieldName  = "cf-turnstile-response";
+        private const string CaptchaFieldName = "captcha-response";
 
         // ── Runtime configuration (populated from plug-in config at registration) ─
         private readonly CaptchaProvider _provider;
@@ -115,23 +116,16 @@ namespace CijCaptcha
 
             var requestString = (string)context.InputParameters["msdynmkt_formsubmissionrequest"];
             var requestObject = Deserialize<FormSubmissionRequest>(requestString);
+            tracingService.Trace($"[CijCaptcha] Raw form submission: {requestString}");
+            if(requestObject.Fields!=null)
+            tracingService.Trace($"[CijCaptcha] Parsed fields: {string.Join(", ", requestObject.Fields.Select(f => $"{f.Key}={f.Value}"))}");
 
             // ── 2. Resolve the expected field name for the active provider ─────
-            string fieldName = _provider == CaptchaProvider.CloudflareTurnstile
-                ? TurnstileFieldName
-                : RecaptchaFieldName;
-
-            if (requestObject?.Fields == null ||
-                !requestObject.Fields.TryGetValue(fieldName, out string captchaToken))
-            {
-                tracingService.Trace($"[CijCaptcha] '{fieldName}' was not present in the submission – skipping validation.");
-                return;
-            }
-
+            var captchaToken = (requestObject?.Fields?.FirstOrDefault(f => f.Key == CaptchaFieldName))?.Value;
             if (string.IsNullOrWhiteSpace(captchaToken))
             {
-                tracingService.Trace($"[CijCaptcha] '{fieldName}' value is empty – failing submission.");
-                SetValidationResponse(context, isValid: false, fieldName: fieldName);
+                tracingService.Trace($"[CijCaptcha] '{CaptchaFieldName}' is not present or empty – failing submission.");
+                SetValidationResponse(context, isValid: false, fieldName: CaptchaFieldName, error: "Captcha is not present or empty.");
                 return;
             }
 
@@ -152,7 +146,7 @@ namespace CijCaptcha
             tracingService.Trace($"[CijCaptcha] Final result: isValid={isValid}");
 
             // ── 4. Write the outcome back to CIJ ──────────────────────────────
-            SetValidationResponse(context, isValid, fieldName: fieldName);
+            SetValidationResponse(context, isValid, fieldName: CaptchaFieldName, isValid ? null:"Captcha test failed.");
         }
 
         // ── Provider verification ──────────────────────────────────────────────
@@ -264,13 +258,15 @@ namespace CijCaptcha
         private void SetValidationResponse(
             IPluginExecutionContext context,
             bool isValid,
-            string fieldName)
+            string fieldName,
+            string error = null)
         {
             var resp = new ValidateFormSubmissionResponse
             {
                 IsValid = isValid,
                 // Strip the raw CAPTCHA token from the CIJ submission record UI.
-                ValidationOnlyFields = new List<string> { fieldName }
+                ValidationOnlyFields = new List<string> { fieldName },
+                Error = error
             };
 
             context.OutputParameters["msdynmkt_validationresponse"] = Serialize(resp);
@@ -333,11 +329,22 @@ namespace CijCaptcha
 
     // ── Data contracts ─────────────────────────────────────────────────────────
 
-    [DataContract]
-    public class FormSubmissionRequest
+    public sealed class FormSubmissionRequest
     {
-        [DataMember(Name = "fields")]
-        public Dictionary<string, string> Fields { get; set; }
+        [JsonPropertyName("PublishedFormUrl")]
+        public string PublishedFormUrl { get; set; }
+
+        [JsonPropertyName("Fields")]
+        public List<FormField> Fields { get; set; }
+    }
+
+    public sealed class FormField
+    {
+        [JsonPropertyName("Key")]
+        public string Key { get; set; }
+
+        [JsonPropertyName("Value")]
+        public string Value { get; set; }
     }
 
     /// <summary>Google reCAPTCHA v3 /siteverify response.</summary>
@@ -400,5 +407,8 @@ namespace CijCaptcha
         /// </summary>
         [DataMember(Name = "ValidationOnlyFields")]
         public List<string> ValidationOnlyFields { get; set; }
+
+        [DataMember(Name = "Error")]
+        public string Error { get; set; }
     }
 }

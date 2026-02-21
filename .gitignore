@@ -14,3 +14,6 @@ Thumbs.db
 .vscode
 __azurite_db_blob__.json
 __azurite_db_blob_extent__.json
+code-app/node_modules
+code-app/dist
+code-app/.power

@@ -8,7 +8,7 @@ import {
 } from './services/pluginConfigService';
 
 type Provider = 'recaptcha' | 'turnstile';
-type ThemeMode = 'dark' | 'light';
+type ThemeMode = 'dark' | 'light' | 'system';
 
 const clamp = (value: number) => Math.max(0, Math.min(1, value));
 
@@ -45,7 +45,8 @@ const parseUnsecureConfig = (config?: string): { provider: Provider; minscore: n
 };
 
 export function App() {
-  const [theme, setTheme] = useState<ThemeMode>('dark');
+  const [themeMode, setThemeMode] = useState<ThemeMode>('system');
+  const [systemTheme, setSystemTheme] = useState<'dark' | 'light'>('light');
   const [debugEnabled, setDebugEnabled] = useState(false);
   const [provider, setProvider] = useState<Provider>('recaptcha');
   const [minScore, setMinScore] = useState('0.5');
@@ -59,6 +60,21 @@ export function App() {
     const safeScore = clamp(Number(minScore) || 0.5);
     return `provider=recaptcha;minscore=${safeScore}`;
   }, [provider, minScore]);
+
+  const resolvedTheme: 'dark' | 'light' = useMemo(() => {
+    if (themeMode === 'system') return systemTheme;
+    return themeMode;
+  }, [themeMode, systemTheme]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const media = window.matchMedia('(prefers-color-scheme: dark)');
+    const update = () => setSystemTheme(media.matches ? 'dark' : 'light');
+    update();
+    media.addEventListener('change', update);
+    return () => media.removeEventListener('change', update);
+  }, []);
 
   useEffect(() => {
     setDebugEnabled(isPluginConfigDebugEnabled());
@@ -139,7 +155,7 @@ export function App() {
   };
 
   return (
-    <div className={`app ${theme}`}>
+    <div className={`app ${resolvedTheme}`}>
       <div className="backdrop" />
       <main className="panel">
         <header className="header">
@@ -148,40 +164,71 @@ export function App() {
             <p>Configure plugin provider, threshold, and secret key.</p>
           </div>
           <div className="header-actions">
-            <button
-              className={`debug-pill ${debugEnabled ? 'on' : 'off'}`}
-              type="button"
-              onClick={toggleDebug}
-              title="Toggle debug logging"
-            >
-              Debug: {debugEnabled ? 'ON' : 'OFF'}
-            </button>
-            <button
-              className="theme-toggle"
-              type="button"
-              onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
-            >
-              {theme === 'dark' ? 'Light mode' : 'Dark mode'}
-            </button>
+            <div className="header-actions-top">
+              <button
+                className={`debug-pill ${debugEnabled ? 'on' : 'off'}`}
+                type="button"
+                onClick={toggleDebug}
+                title="Toggle debug logging"
+              >
+                Debug: {debugEnabled ? 'ON' : 'OFF'}
+              </button>
+              <div className="theme-toggle" role="tablist" aria-label="Theme">
+                <button
+                  type="button"
+                  className={`theme-option ${themeMode === 'system' ? 'active' : ''}`}
+                  onClick={() => setThemeMode('system')}
+                  aria-label="System theme"
+                >
+                  <span aria-hidden="true">🖥</span>
+                  <span>System</span>
+                </button>
+                <button
+                  type="button"
+                  className={`theme-option ${themeMode === 'light' ? 'active' : ''}`}
+                  onClick={() => setThemeMode('light')}
+                  aria-label="Light theme"
+                >
+                  <span aria-hidden="true">☼</span>
+                  <span>Light</span>
+                </button>
+                <button
+                  type="button"
+                  className={`theme-option ${themeMode === 'dark' ? 'active' : ''}`}
+                  onClick={() => setThemeMode('dark')}
+                  aria-label="Dark theme"
+                >
+                  <span aria-hidden="true">☾</span>
+                  <span>Dark</span>
+                </button>
+              </div>
+            </div>
+            {debugEnabled && (
+              <label className="step-id-inline">
+                <span>Plugin Step Id</span>
+                <input value={stepId} readOnly />
+              </label>
+            )}
           </div>
         </header>
 
         <section className="grid">
-          <label>
-            <span>Plugin Step Id</span>
-            <input
-              value={stepId}
-              onChange={(e) => setStepId(e.target.value)}
-              placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-            />
-          </label>
-
           <label>
             <span>Provider</span>
             <select value={provider} onChange={(e) => setProvider(e.target.value as Provider)}>
               <option value="recaptcha">Google reCAPTCHA v3</option>
               <option value="turnstile">Cloudflare Turnstile</option>
             </select>
+          </label>
+
+          <label>
+            <span>Secret key</span>
+            <input
+              type="password"
+              value={secret}
+              onChange={(e) => setSecret(e.target.value)}
+              placeholder="••••••••••••••••"
+            />
           </label>
 
           {provider === 'recaptcha' && (
@@ -197,16 +244,6 @@ export function App() {
               />
             </label>
           )}
-
-          <label>
-            <span>Secret key</span>
-            <input
-              type="password"
-              value={secret}
-              onChange={(e) => setSecret(e.target.value)}
-              placeholder="••••••••••••••••"
-            />
-          </label>
 
           <label className="wide">
             <span>Unsecure config preview</span>

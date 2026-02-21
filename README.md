@@ -56,6 +56,29 @@ cij-recaptcha-v3/
     └── CaptchaValidationPlugin.cs  ← Dataverse plug-in
 ```
 
+## Configuration app
+
+A standalone configuration app is included at:
+
+- `code-app/`
+
+Use this app to configure the plugin step any time:
+
+- Select provider (`recaptcha` or `turnstile`)
+- Set `minscore` (reCAPTCHA only)
+- Enter secret key (masked password input)
+
+Save behavior:
+
+- Writes unsecure config to `sdkmessageprocessingstep.configuration`
+  - `provider=recaptcha;minscore=<value>`
+  - `provider=turnstile`
+- Writes secret key to secure config (`sdkmessageprocessingstepsecureconfig.secureconfig`)
+
+The app auto-resolves `sdkmessageprocessingstepid` on load by finding
+`CijCaptcha.CaptchaValidationPlugin` step for `msdynmkt_validateformsubmission`
+and preloads current unsecure configuration when `Xrm.WebApi` is available.
+
 ---
 
 ## Prerequisites

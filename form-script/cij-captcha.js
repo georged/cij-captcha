@@ -40,12 +40,13 @@
   //                 (default 0.5, configurable via plug-in Unsecure Config).
   //   'turnstile' — Cloudflare Turnstile. Privacy-friendly alternative; no score,
   //                 just pass/fail. Widget appearance is controlled below.
-  var CAPTCHA_PROVIDER = 'recaptcha';            // 'recaptcha' | 'turnstile'
+  var CAPTCHA_PROVIDER = 'turnstile';            // 'recaptcha' | 'turnstile'
 
   // Your PUBLIC site key (safe to include in client-side code).
   //   reCAPTCHA → https://www.google.com/recaptcha/admin
   //   Turnstile  → https://dash.cloudflare.com/?to=/:account/turnstile
-  var CAPTCHA_SITE_KEY = 'YOUR_KEY';
+  var CAPTCHA_SITE_KEY_GOOGLE = '6Lc-kW8sAAAAAHRBohmg3ooBVlVSx4mhSHWvZuQL';
+  var CAPTCHA_SITE_KEY = '0x4AAAAAACgIREV6KvGbNVQm'; 
 
   // Action name attached to each reCAPTCHA v3 token.
   // Appears in the Google reCAPTCHA Admin Console for analytics/filtering.
@@ -74,7 +75,7 @@
   //               challenge fires at form submit time, not on page load.
   //   'render'  — challenge runs automatically as soon as the widget is
   //               rendered. Use with size: 'normal' or 'compact'.
-  var TURNSTILE_EXECUTION = 'render';           // 'execute' | 'render'
+  var TURNSTILE_EXECUTION = 'execute';           // 'execute' | 'render'
 
   // TURNSTILE_APPEARANCE — controls when the widget container is made visible.
   //   'always'           — widget is always shown (useful for 'normal'/'compact').
@@ -82,13 +83,17 @@
   //   'interaction-only' — widget stays hidden unless Cloudflare requires the
   //                        user to solve an interactive challenge. Recommended
   //                        for invisible mode — zero UI unless needed.
-  var TURNSTILE_APPEARANCE = 'always'; // 'always' | 'execute' | 'interaction-only'
+  var TURNSTILE_APPEARANCE = 'execute'; // 'always' | 'execute' | 'interaction-only'
 
   // TURNSTILE_THEME — colour scheme of the widget UI (no effect in invisible mode).
   //   'auto'  — follows the user's OS light/dark-mode preference.
   //   'light' — always light background.
   //   'dark'  — always dark background.
   var TURNSTILE_THEME = 'auto';                  // 'auto' | 'light' | 'dark'
+
+  // Turnstile tokens are valid for up to 300s. Reuse for ~240s to avoid
+  // unnecessary revalidation while still staying safely below expiry.
+  var TURNSTILE_TOKEN_REUSE_MS = 240000;
 
   // ──────────────────────────────────────────────────────────────────────────
 
@@ -162,6 +167,17 @@
     return loadTurnstileScript().then(function () {
       return new Promise(function (resolve, reject) {
         var entry = getOrCreateTurnstileWidget(formEl, resolve, reject);
+
+        // In visible render mode, reuse the token generated on initial widget
+        // render to avoid a second validation during submit.
+        if (TURNSTILE_EXECUTION === 'render' &&
+            entry.token &&
+            entry.tokenAt &&
+            (Date.now() - entry.tokenAt) < TURNSTILE_TOKEN_REUSE_MS) {
+          resolve(entry.token);
+          return;
+        }
+
         // Reset so a brand-new token is issued — tokens are single-use
         window.turnstile.reset(entry.widgetId);
         // Only call execute() when using execution: 'execute' (invisible mode).
@@ -196,11 +212,22 @@
       formEl.appendChild(captchaBlock);
     }
 
-    var entry = { formEl: formEl, widgetId: null, resolve: resolve, reject: reject };
+    var entry = {
+      formEl: formEl,
+      widgetId: null,
+      resolve: resolve,
+      reject: reject,
+      token: null,
+      tokenAt: 0
+    };
     turnstileWidgets.push(entry);
 
     entry.widgetId = window.turnstile.render(container, {
       sitekey: CAPTCHA_SITE_KEY,
+
+      // Use the existing form field as the single source of truth.
+      // Prevent Turnstile from auto-injecting another hidden response field.
+      'response-field': false,
 
       // Widget dimensions / mode — see TURNSTILE_SIZE above for all options
       size: TURNSTILE_SIZE,
@@ -218,6 +245,14 @@
       // entry.resolve may be null during the pre-render warm-up call
       // (wireForm passes null callbacks just to create the widget early).
       callback: function (token) {
+        entry.token = token;
+        entry.tokenAt = Date.now();
+
+        var captchaField = entry.formEl.querySelector('input[name="' + fieldName + '"]');
+        if (captchaField) {
+          captchaField.value = token;
+        }
+
         if (entry.resolve) entry.resolve(token);
       },
 
@@ -232,6 +267,14 @@
       // Clearing the callbacks means the next submit will trigger reset()+execute()
       // to obtain a fresh token instead of resolving with a stale one.
       'expired-callback': function () {
+        entry.token = null;
+        entry.tokenAt = 0;
+
+        var captchaField = entry.formEl.querySelector('input[name="' + fieldName + '"]');
+        if (captchaField) {
+          captchaField.value = '';
+        }
+
         entry.resolve = null;
         entry.reject  = null;
       }

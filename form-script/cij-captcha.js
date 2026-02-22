@@ -1,459 +1,442 @@
 /**
  * cij-captcha.js
- * ───────────────────────────────────────────────────────────────────────────
- * Add this script inside the Customer Insights Journeys form editor under
- *   Form → Custom scripts  (or in a <script> block on the page hosting the embed).
+ * Reusable CIJ CAPTCHA helper.
  *
- * Supports two CAPTCHA providers:
- *   'recaptcha'  — Google reCAPTCHA v3 (score-based, always invisible; no visible widget)
- *   'turnstile'  — Cloudflare Turnstile (pass/fail, privacy-friendly; widget appearance
- *                  is configurable via TURNSTILE_SIZE / TURNSTILE_EXECUTION / TURNSTILE_APPEARANCE)
+ * Usage:
+ *   <script src="https://your-cdn/cij-captcha.js"></script>
+ *   <script>
+ *     window.CijCaptcha.init({ ...settings });
+ *   </script>
  *
- * What it does
- * ────────────
- *  1. Waits for the CIJ <form> to appear inside the <div data-form-id="…"> embed.
- *  2. Injects a hidden field (name depends on provider) into the form.
- *  3. Loads the chosen provider's script (once).
- *  4. Intercepts the form submit, obtains a fresh token, populates the hidden
- *     field, then re-submits.
+ * Minimal examples:
+ *   // Turnstile (minimum)
+ *   window.CijCaptcha.init({
+ *     provider: 'turnstile',
+ *     siteKey: 'YOUR_TURNSTILE_SITE_KEY'
+ *   });
  *
- * The Dataverse plugin (CaptchaValidationPlugin.cs) reads that field from the
- * msdynmkt_validateformsubmission message and verifies it server-side.
+ *   // reCAPTCHA v3 (minimum)
+ *   window.CijCaptcha.init({
+ *     provider: 'recaptcha',
+ *     siteKey: 'YOUR_RECAPTCHA_SITE_KEY'
+ *   });
  *
- * Configuration
- * ─────────────
- *  CAPTCHA_PROVIDER : 'recaptcha' | 'turnstile'
- *  CAPTCHA_SITE_KEY : your public / site key for the chosen provider
- *  CAPTCHA_ACTION   : action label (reCAPTCHA v3 only; alphanumeric + /)
- * ───────────────────────────────────────────────────────────────────────────
+ * Public init settings:
+ *   provider: 'recaptcha' | 'turnstile'     // default 'recaptcha'
+ *   siteKey: string                         // site key (public), required
+ *   action: string                          // reCAPTCHA only; default 'cij_form_submit'
+ *   enableDebugLogs: boolean                // default false
+ *   eagerLoad: boolean                      // default true
+ *   turnstile?: {
+ *     size?: 'normal'|'compact'|'invisible',               // default 'normal'
+ *     execution?: 'execute'|'render',                      // default 'execute'
+ *     appearance?: 'always'|'execute'|'interaction-only',  // default 'execute'
+ *     theme?: 'auto'|'light'|'dark',                       // default 'auto'
+ *     tokenReuseTimeout?: number                           // default 240000 (4 minutes)             
+ *   }
  */
-
-(function () {
+(function (global) {
   'use strict';
 
-  // ── ✏️  Configuration – edit these values ──────────────────────────────────
+  var CIJ_FIELD_NAME = 'captcha-response';
+  var CIJ_FORM_SELECTOR = 'form.marketingForm';
+  var CIJ_SUBMIT_EVENT = 'd365mkt-formsubmit';
 
-  // Which CAPTCHA provider to use.
-  //   'recaptcha' — Google reCAPTCHA v3. Always fully invisible; analyses
-  //                 behaviour and returns a fraud score (0.0 = bot, 1.0 = human).
-  //                 The server-side plugin rejects submissions below a threshold
-  //                 (default 0.5, configurable via plug-in Unsecure Config).
-  //   'turnstile' — Cloudflare Turnstile. Privacy-friendly alternative; no score,
-  //                 just pass/fail. Widget appearance is controlled below.
-  var CAPTCHA_PROVIDER = 'turnstile';            // 'recaptcha' | 'turnstile'
+  var DEFAULTS = {
+    provider: 'recaptcha',
+    siteKey: '',
+    action: 'cij_form_submit',
+    enableDebugLogs: false,
+    eagerLoad: true,
+    turnstile: {
+      size: 'normal',
+      execution: 'execute',
+      appearance: 'execute',
+      theme: 'auto',
+      tokenReuseTimeout: 240000
+    }
+  };
 
-  // Your PUBLIC site key (safe to include in client-side code).
-  //   reCAPTCHA → https://www.google.com/recaptcha/admin
-  //   Turnstile  → https://dash.cloudflare.com/?to=/:account/turnstile
-  var CAPTCHA_SITE_KEY_GOOGLE = '6Lc-kW8sAAAAAHRBohmg3ooBVlVSx4mhSHWvZuQL';
-  var CAPTCHA_SITE_KEY = '0x4AAAAAACgIREV6KvGbNVQm'; 
-
-  // Action name attached to each reCAPTCHA v3 token.
-  // Appears in the Google reCAPTCHA Admin Console for analytics/filtering.
-  // Allowed characters: alphanumeric, hyphens, slashes.
-  // Ignored entirely when CAPTCHA_PROVIDER === 'turnstile'.
-  var CAPTCHA_ACTION = 'cij_form_submit';
-
-  // ── Turnstile widget options (only used when CAPTCHA_PROVIDER = 'turnstile') ─
-
-  // TURNSTILE_SIZE — physical dimensions / mode of the rendered widget.
-  //   'normal'    — full-width tick-box (300 × 65 px). Shows "Verifying…" then
-  //                 a green tick. Most recognisable UX.
-  //   'compact'   — smaller tick-box (130 × 120 px). Good for tight layouts.
-  //   'invisible' — no visible widget at all. Cloudflare may still surface an
-  //                 interactive challenge in a modal overlay if it is not
-  //                 confident the visitor is human.
-  //
-  // Pair with TURNSTILE_EXECUTION:
-  //   'invisible' size  → use execution: 'execute'  (triggered on submit)
-  //   'normal'/'compact' → use execution: 'render'   (auto-runs on page load)
-  var TURNSTILE_SIZE = 'normal';              // 'normal' | 'compact' | 'invisible'
-
-  // TURNSTILE_EXECUTION — when the challenge is initiated.
-  //   'execute' — challenge runs only when turnstile.execute() is called
-  //               programmatically. Use with size: 'invisible' so the
-  //               challenge fires at form submit time, not on page load.
-  //   'render'  — challenge runs automatically as soon as the widget is
-  //               rendered. Use with size: 'normal' or 'compact'.
-  var TURNSTILE_EXECUTION = 'execute';           // 'execute' | 'render'
-
-  // TURNSTILE_APPEARANCE — controls when the widget container is made visible.
-  //   'always'           — widget is always shown (useful for 'normal'/'compact').
-  //   'execute'          — widget appears only when execute() is called.
-  //   'interaction-only' — widget stays hidden unless Cloudflare requires the
-  //                        user to solve an interactive challenge. Recommended
-  //                        for invisible mode — zero UI unless needed.
-  var TURNSTILE_APPEARANCE = 'execute'; // 'always' | 'execute' | 'interaction-only'
-
-  // TURNSTILE_THEME — colour scheme of the widget UI (no effect in invisible mode).
-  //   'auto'  — follows the user's OS light/dark-mode preference.
-  //   'light' — always light background.
-  //   'dark'  — always dark background.
-  var TURNSTILE_THEME = 'auto';                  // 'auto' | 'light' | 'dark'
-
-  // Turnstile tokens are valid for up to 300s. Reuse for ~240s to avoid
-  // unnecessary revalidation while still staying safely below expiry.
-  var TURNSTILE_TOKEN_REUSE_MS = 240000;
-
-  // ──────────────────────────────────────────────────────────────────────────
-
-  // Hidden field name expected by the server-side plugin.
-  // Resolved once at boot — no repeated ternary throughout the code
-  var fieldName   = 'captcha-response';
-  var loadPromise = null;
-
-  // Registry of Turnstile widgets — one per <form> element, reused across submits
-  var turnstileWidgets = [];
-
-  // ═══════════════════════════════════════════════════════════════════════════
-  // PROVIDER: Google reCAPTCHA v3
-  // ═══════════════════════════════════════════════════════════════════════════
-
-  function loadRecaptchaScript() {
-    if (loadPromise) return loadPromise;
-    loadPromise = new Promise(function (resolve, reject) {
-      if (window.grecaptcha && window.grecaptcha.execute) {
-        window.grecaptcha.ready(function () { resolve(); });
-        return;
-      }
-      var s = document.createElement('script');
-      s.src   = 'https://www.google.com/recaptcha/api.js?render=' +
-                encodeURIComponent(CAPTCHA_SITE_KEY);
-      s.async = true;
-      s.onload  = function () { window.grecaptcha.ready(function () { resolve(); }); };
-      s.onerror = function () {
-        loadPromise = null;
-        reject(new Error('[CIJ Captcha] Failed to load reCAPTCHA script.'));
-      };
-      document.head.appendChild(s);
-    });
-    return loadPromise;
+  function pickAllowed(value, allowedValues, fallback) {
+    for (var i = 0; i < allowedValues.length; i++) {
+      if (value === allowedValues[i]) return value;
+    }
+    return fallback;
   }
 
-  function getRecaptchaToken() {
-    return loadRecaptchaScript().then(function () {
-      return window.grecaptcha.execute(CAPTCHA_SITE_KEY, { action: CAPTCHA_ACTION });
-    });
+  function normalizeTurnstileSettings(input, defaults) {
+    var source = input || {};
+
+    var normalizedTimeout = defaults.tokenReuseTimeout;
+    if (typeof source.tokenReuseTimeout === 'number' && source.tokenReuseTimeout > 0) {
+      normalizedTimeout = source.tokenReuseTimeout;
+    }
+
+    return {
+      size: pickAllowed(source.size, ['normal', 'compact', 'invisible'], defaults.size),
+      execution: pickAllowed(source.execution, ['execute', 'render'], defaults.execution),
+      appearance: pickAllowed(
+        source.appearance,
+        ['always', 'execute', 'interaction-only'],
+        defaults.appearance
+      ),
+      theme: pickAllowed(source.theme, ['auto', 'light', 'dark'], defaults.theme),
+      tokenReuseTimeout: normalizedTimeout
+    };
   }
 
-  // ═══════════════════════════════════════════════════════════════════════════
-  // PROVIDER: Cloudflare Turnstile (invisible / explicit execution)
-  // ═══════════════════════════════════════════════════════════════════════════
+  function mergeSettings(base, override) {
+    var result = {
+      provider: base.provider,
+      siteKey: base.siteKey,
+      action: base.action,
+      enableDebugLogs: base.enableDebugLogs,
+      eagerLoad: base.eagerLoad,
+      turnstile: normalizeTurnstileSettings(null, base.turnstile)
+    };
 
-  function loadTurnstileScript() {
-    if (loadPromise) return loadPromise;
-    loadPromise = new Promise(function (resolve, reject) {
-      if (window.turnstile) { resolve(); return; }
-      var s = document.createElement('script');
-      // render=explicit — prevents auto-rendering of any [cf-turnstile] elements
-      s.src   = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';
-      s.async = true;
-      s.defer = true;
-      s.onload  = function () { resolve(); };
-      s.onerror = function () {
-        loadPromise = null;
-        reject(new Error('[CIJ Captcha] Failed to load Turnstile script.'));
-      };
-      document.head.appendChild(s);
-    });
-    return loadPromise;
+    if (!override) return result;
+
+    for (var key in override) {
+      if (!Object.prototype.hasOwnProperty.call(override, key)) continue;
+      if (key === 'turnstile') continue;
+      result[key] = override[key];
+    }
+
+    result.turnstile = normalizeTurnstileSettings(override.turnstile, result.turnstile);
+
+    return result;
   }
 
-  /**
-   * Returns a Promise<string> resolving with a fresh Turnstile token.
-   * Re-uses (and resets) an already-rendered invisible widget for the form.
-   */
-  function getTurnstileToken(formEl) {
-    return loadTurnstileScript().then(function () {
-      return new Promise(function (resolve, reject) {
-        var entry = getOrCreateTurnstileWidget(formEl, resolve, reject);
+  function createInstance(settings) {
+    var config = mergeSettings(DEFAULTS, settings);
 
-        // In visible render mode, reuse the token generated on initial widget
-        // render to avoid a second validation during submit.
-        if (TURNSTILE_EXECUTION === 'render' &&
-            entry.token &&
-            entry.tokenAt &&
-            (Date.now() - entry.tokenAt) < TURNSTILE_TOKEN_REUSE_MS) {
-          resolve(entry.token);
+    if (!config.siteKey) {
+      throw new Error('[CIJ Captcha] Missing required setting: siteKey');
+    }
+
+    var state = {
+      loadPromise: null,
+      turnstileWidgets: [],
+      observer: null,
+      initialized: false
+    };
+
+    function debug() {
+      if (!config.enableDebugLogs) return;
+      var args = Array.prototype.slice.call(arguments);
+      args.unshift('[CIJ Captcha]');
+      console.log.apply(console, args);
+    }
+
+    function loadRecaptchaScript() {
+      if (state.loadPromise) return state.loadPromise;
+      state.loadPromise = new Promise(function (resolve, reject) {
+        if (global.grecaptcha && global.grecaptcha.execute) {
+          global.grecaptcha.ready(function () { resolve(); });
           return;
         }
-
-        // Reset so a brand-new token is issued — tokens are single-use
-        window.turnstile.reset(entry.widgetId);
-        // Only call execute() when using execution: 'execute' (invisible mode).
-        // In execution: 'render' mode the widget handles this automatically.
-        if (TURNSTILE_EXECUTION === 'execute') {
-          window.turnstile.execute(entry.widgetId);
-        }
+        var s = document.createElement('script');
+        s.src = 'https://www.google.com/recaptcha/api.js?render=' + encodeURIComponent(config.siteKey);
+        s.async = true;
+        s.onload = function () { global.grecaptcha.ready(function () { resolve(); }); };
+        s.onerror = function () {
+          state.loadPromise = null;
+          reject(new Error('[CIJ Captcha] Failed to load reCAPTCHA script.'));
+        };
+        document.head.appendChild(s);
       });
-    });
-  }
-
-  function getOrCreateTurnstileWidget(formEl, resolve, reject) {
-    for (var i = 0; i < turnstileWidgets.length; i++) {
-      if (turnstileWidgets[i].formEl === formEl) {
-        turnstileWidgets[i].resolve = resolve;
-        turnstileWidgets[i].reject  = reject;
-        return turnstileWidgets[i];
-      }
+      return state.loadPromise;
     }
 
-    // Hidden container — Turnstile attaches its iframe here.
-    // display:none keeps it off-screen; if a challenge modal is needed,
-    // Cloudflare renders it as a full-page overlay regardless.
-    var container = document.createElement('div');
-    var captchaBlock = document.createElement('div');
-    captchaBlock.className = 'submitButtonWrapper';
-    captchaBlock.appendChild(container);
-    var submitWrapper = formEl.querySelector('div.submitButtonWrapper');
-    if (submitWrapper && submitWrapper.parentNode) {
-      submitWrapper.parentNode.insertBefore(captchaBlock, submitWrapper);
-    } else {
-      formEl.appendChild(captchaBlock);
-    }
-
-    var entry = {
-      formEl: formEl,
-      widgetId: null,
-      resolve: resolve,
-      reject: reject,
-      token: null,
-      tokenAt: 0
-    };
-    turnstileWidgets.push(entry);
-
-    entry.widgetId = window.turnstile.render(container, {
-      sitekey: CAPTCHA_SITE_KEY,
-
-      // Use the existing form field as the single source of truth.
-      // Prevent Turnstile from auto-injecting another hidden response field.
-      'response-field': false,
-
-      // Widget dimensions / mode — see TURNSTILE_SIZE above for all options
-      size: TURNSTILE_SIZE,
-
-      // When the challenge fires — see TURNSTILE_EXECUTION above for all options
-      execution: TURNSTILE_EXECUTION,
-
-      // When the widget UI is shown — see TURNSTILE_APPEARANCE above for all options
-      appearance: TURNSTILE_APPEARANCE,
-
-      // Widget colour scheme — see TURNSTILE_THEME above for all options
-      theme: TURNSTILE_THEME,
-
-      // Called when Turnstile has issued a valid token.
-      // entry.resolve may be null during the pre-render warm-up call
-      // (wireForm passes null callbacks just to create the widget early).
-      callback: function (token) {
-        entry.token = token;
-        entry.tokenAt = Date.now();
-
-        var captchaField = entry.formEl.querySelector('input[name="' + fieldName + '"]');
-        if (captchaField) {
-          captchaField.value = token;
-        }
-
-        if (entry.resolve) entry.resolve(token);
-      },
-
-      // Called on unrecoverable errors (e.g. invalid site key, network failure).
-      // Error codes: https://developers.cloudflare.com/turnstile/troubleshooting/client-side-errors/
-      'error-callback': function (code) {
-        console.error('[CIJ Captcha] Turnstile error:', code);
-        if (entry.reject) entry.reject(new Error('[CIJ Captcha] Turnstile error: ' + code));
-      },
-
-      // Called when an issued token expires before use (tokens last 300 seconds).
-      // Clearing the callbacks means the next submit will trigger reset()+execute()
-      // to obtain a fresh token instead of resolving with a stale one.
-      'expired-callback': function () {
-        entry.token = null;
-        entry.tokenAt = 0;
-
-        var captchaField = entry.formEl.querySelector('input[name="' + fieldName + '"]');
-        if (captchaField) {
-          captchaField.value = '';
-        }
-
-        entry.resolve = null;
-        entry.reject  = null;
-      }
-    });
-
-    return entry;
-  }
-
-  // ═══════════════════════════════════════════════════════════════════════════
-  // Generic token getter — delegates to the selected provider
-  // ═══════════════════════════════════════════════════════════════════════════
-
-  function getToken(formEl) {
-    return CAPTCHA_PROVIDER === 'turnstile'
-      ? getTurnstileToken(formEl)
-      : getRecaptchaToken();
-  }
-
-  // ═══════════════════════════════════════════════════════════════════════════
-  // Form instrumentation
-  // ═══════════════════════════════════════════════════════════════════════════
-
-  function injectHiddenField(formEl) {
-    var input = formEl.querySelector('input[name="' + fieldName + '"]');
-    if (!input) { 
-      input   = document.createElement('input');
-      input.type  = 'hidden';
-      input.name  = fieldName;
-      input.value = '';
-      formEl.appendChild(input);
-    }
-    return input;
-  }
-
-  function getFormFromCijEvent(event) {
-    var target = event && event.target;
-    if (!target) return null;
-
-    if (target.tagName === 'FORM') return target;
-    if (target.querySelector) {
-      var nested = target.querySelector('form');
-      if (nested) return nested;
-    }
-    if (target.closest) {
-      return target.closest('form');
-    }
-
-    return null;
-  }
-
-  
-  function onCijFormSubmit(event) {
-    console.log('[CIJ Captcha] Form submit intercepted:', event);
-    var formEl = getFormFromCijEvent(event);
-    if (!formEl || !formEl._cijCaptchaWired) {
-      console.warn('[CIJ Captcha] Could not find target form for submit event, or form is not wired for CAPTCHA. Skipping CAPTCHA verification.', formEl);
-      return;
-    }
-
-    if (formEl._cijCaptchaResubmitting) return;
-
-    var hiddenField = injectHiddenField(formEl);
-
-    // Token already present — allow submit to proceed.
-    if (hiddenField && hiddenField.value) return;
-
-    // Prevent current submit and continue only when token is available.
-    event.preventDefault();
-    if (event.stopImmediatePropagation) event.stopImmediatePropagation();
-
-    if (formEl._cijCaptchaSubmitPending) return;
-    formEl._cijCaptchaSubmitPending = true;
-    
-    console.log('[CIJ Captcha] Intercepted form submit, obtaining CAPTCHA token…');
-    getToken(formEl)
-      .then(function (token) {
-        console.log('[CIJ Captcha] Obtained CAPTCHA token:', token.substring(0, 10) + '...');
-        hiddenField.value = token;
-        console.log('[CIJ Captcha] Set hidden field value, re-submitting form…', hiddenField.value.substring(0, 10) + '...');
-        formEl._cijCaptchaSubmitPending = false;
-        formEl._cijCaptchaResubmitting = true;
-
-        if (formEl.requestSubmit) {
-          formEl.requestSubmit();
-        } else {
-          formEl.submit();
-        }
-
-        setTimeout(function () {
-          formEl._cijCaptchaResubmitting = false;
-        }, 0);
-      })
-      .catch(function (err) {
-        console.error('[CIJ Captcha] Could not obtain CAPTCHA token:', err);
-        formEl._cijCaptchaSubmitPending = false;
-        formEl._cijCaptchaResubmitting = true;
-
-        if (formEl.requestSubmit) {
-          formEl.requestSubmit();
-        } else {
-          formEl.submit();
-        }
-
-        setTimeout(function () {
-          formEl._cijCaptchaResubmitting = false;
-        }, 0);
-      });
-  }
-
-  function wireForm(formEl) {
-    injectHiddenField(formEl);
-
-    // For Turnstile: pre-render the invisible widget so it is ready faster
-    if (CAPTCHA_PROVIDER === 'turnstile') {
-      loadTurnstileScript().then(function () {
-        getOrCreateTurnstileWidget(formEl, null, null);
+    function getRecaptchaToken() {
+      return loadRecaptchaScript().then(function () {
+        return global.grecaptcha.execute(config.siteKey, { action: config.action });
       });
     }
-  }
 
-  // ═══════════════════════════════════════════════════════════════════════════
-  // DOM observation — waits for CIJ to render the <form> asynchronously
-  // ═══════════════════════════════════════════════════════════════════════════
+    function loadTurnstileScript() {
+      if (state.loadPromise) return state.loadPromise;
+      state.loadPromise = new Promise(function (resolve, reject) {
+        if (global.turnstile) {
+          resolve();
+          return;
+        }
+        var s = document.createElement('script');
+        s.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';
+        s.async = true;
+        s.defer = true;
+        s.onload = function () { resolve(); };
+        s.onerror = function () {
+          state.loadPromise = null;
+          reject(new Error('[CIJ Captcha] Failed to load Turnstile script.'));
+        };
+        document.head.appendChild(s);
+      });
+      return state.loadPromise;
+    }
 
-  function findAndWireForms(root) {
-    var forms = (root || document).querySelectorAll(
-      'form.marketingForm'
-    );
-    forms.forEach(function (f) {
-      console.log('[CIJ Captcha] Found form to wire:', f);
-      var validateSubmission = f.getAttribute('data-validate-submission');
-      console.log('[CIJ Captcha] Form has data-validate-submission:', validateSubmission);
-      if(!validateSubmission) {
-        f.setAttribute('data-validate-submission', 'true');
-        validateSubmission = f.getAttribute('data-validate-submission');
-        console.log('[CIJ Captcha] Form has data-validate-submission:', validateSubmission);
+    function getOrCreateTurnstileWidget(formEl, resolve, reject) {
+      for (var i = 0; i < state.turnstileWidgets.length; i++) {
+        if (state.turnstileWidgets[i].formEl === formEl) {
+          state.turnstileWidgets[i].resolve = resolve;
+          state.turnstileWidgets[i].reject = reject;
+          return state.turnstileWidgets[i];
+        }
       }
-      if (!f._cijCaptchaWired) {
-        f._cijCaptchaWired = true;
-        wireForm(f);
+
+      var container = document.createElement('div');
+      var captchaBlock = document.createElement('div');
+      captchaBlock.className = 'submitButtonWrapper';
+      captchaBlock.appendChild(container);
+
+      var submitWrapper = formEl.querySelector('div.submitButtonWrapper');
+      if (submitWrapper && submitWrapper.parentNode) {
+        submitWrapper.parentNode.insertBefore(captchaBlock, submitWrapper);
+      } else {
+        formEl.appendChild(captchaBlock);
       }
-    });
-  }
 
-  function observeForForms() {
-    findAndWireForms(document);
+      var entry = {
+        formEl: formEl,
+        widgetId: null,
+        resolve: resolve,
+        reject: reject,
+        token: null,
+        tokenAt: 0
+      };
+      state.turnstileWidgets.push(entry);
 
-    var observer = new MutationObserver(function (mutations) {
-      mutations.forEach(function (m) {
-        m.addedNodes.forEach(function (node) {
-          if (node.nodeType !== 1) return;
-          var shadow = node.shadowRoot;
-          if (shadow) findAndWireForms(shadow);
-          findAndWireForms(node);
+      entry.widgetId = global.turnstile.render(container, {
+        sitekey: config.siteKey,
+        'response-field': false,
+        size: config.turnstile.size,
+        execution: config.turnstile.execution,
+        appearance: config.turnstile.appearance,
+        theme: config.turnstile.theme,
+        callback: function (token) {
+          entry.token = token;
+          entry.tokenAt = Date.now();
+
+          var captchaField = entry.formEl.querySelector('input[name="' + CIJ_FIELD_NAME + '"]');
+          if (captchaField) captchaField.value = token;
+          if (entry.resolve) entry.resolve(token);
+        },
+        'error-callback': function (code) {
+          console.error('[CIJ Captcha] Turnstile error:', code);
+          if (entry.reject) entry.reject(new Error('[CIJ Captcha] Turnstile error: ' + code));
+        },
+        'expired-callback': function () {
+          entry.token = null;
+          entry.tokenAt = 0;
+
+          var captchaField = entry.formEl.querySelector('input[name="' + CIJ_FIELD_NAME + '"]');
+          if (captchaField) captchaField.value = '';
+
+          entry.resolve = null;
+          entry.reject = null;
+        }
+      });
+
+      return entry;
+    }
+
+    function getTurnstileToken(formEl) {
+      return loadTurnstileScript().then(function () {
+        return new Promise(function (resolve, reject) {
+          var entry = getOrCreateTurnstileWidget(formEl, resolve, reject);
+
+          if (
+            config.turnstile.execution === 'render' &&
+            entry.token &&
+            entry.tokenAt &&
+            (Date.now() - entry.tokenAt) < config.turnstile.tokenReuseTimeout
+          ) {
+            resolve(entry.token);
+            return;
+          }
+
+          global.turnstile.reset(entry.widgetId);
+          if (config.turnstile.execution === 'execute') {
+            global.turnstile.execute(entry.widgetId);
+          }
         });
       });
-    });
+    }
 
-    observer.observe(document.body, { childList: true, subtree: true });
+    function getToken(formEl) {
+      return config.provider === 'turnstile'
+        ? getTurnstileToken(formEl)
+        : getRecaptchaToken();
+    }
+
+    function injectHiddenField(formEl) {
+      var input = formEl.querySelector('input[name="' + CIJ_FIELD_NAME + '"]');
+      if (!input) {
+        input = document.createElement('input');
+        input.type = 'hidden';
+        input.name = CIJ_FIELD_NAME;
+        input.value = '';
+        formEl.appendChild(input);
+      }
+      return input;
+    }
+
+    function getFormFromCijEvent(event) {
+      var target = event && event.target;
+      if (!target) return null;
+      if (target.tagName === 'FORM') return target;
+      if (target.querySelector) {
+        var nested = target.querySelector('form');
+        if (nested) return nested;
+      }
+      if (target.closest) return target.closest('form');
+      return null;
+    }
+
+    function onCijFormSubmit(event) {
+      var formEl = getFormFromCijEvent(event);
+      if (!formEl || !formEl._cijCaptchaWired) return;
+      if (formEl._cijCaptchaResubmitting) return;
+
+      var captchaField = injectHiddenField(formEl);
+      if (captchaField && captchaField.value) return;
+
+      event.preventDefault();
+      if (event.stopImmediatePropagation) event.stopImmediatePropagation();
+
+      if (formEl._cijCaptchaSubmitPending) return;
+      formEl._cijCaptchaSubmitPending = true;
+
+      debug('Intercepted submit, obtaining token...');
+      getToken(formEl)
+        .then(function (token) {
+          captchaField.value = token;
+          formEl._cijCaptchaSubmitPending = false;
+          formEl._cijCaptchaResubmitting = true;
+
+          if (formEl.requestSubmit) formEl.requestSubmit();
+          else formEl.submit();
+
+          setTimeout(function () {
+            formEl._cijCaptchaResubmitting = false;
+          }, 0);
+        })
+        .catch(function (err) {
+          console.error('[CIJ Captcha] Could not obtain CAPTCHA token:', err);
+          formEl._cijCaptchaSubmitPending = false;
+          formEl._cijCaptchaResubmitting = true;
+
+          if (formEl.requestSubmit) formEl.requestSubmit();
+          else formEl.submit();
+
+          setTimeout(function () {
+            formEl._cijCaptchaResubmitting = false;
+          }, 0);
+        });
+    }
+
+    function onCijAfterSubmit(event) {
+      debug('After submit event:', event);
+    }
+
+    function wireForm(formEl) {
+      injectHiddenField(formEl);
+
+      if (config.provider === 'turnstile') {
+        loadTurnstileScript().then(function () {
+          getOrCreateTurnstileWidget(formEl, null, null);
+        });
+      }
+    }
+
+    function findAndWireForms(root) {
+      var forms = (root || document).querySelectorAll(CIJ_FORM_SELECTOR);
+      forms.forEach(function (formEl) {
+        if (!formEl._cijCaptchaWired) {
+          formEl._cijCaptchaWired = true;
+          wireForm(formEl);
+          debug('Wired form:', formEl);
+        }
+      });
+    }
+
+    function observeForForms() {
+      findAndWireForms(document);
+
+      state.observer = new MutationObserver(function (mutations) {
+        mutations.forEach(function (mutation) {
+          mutation.addedNodes.forEach(function (node) {
+            if (node.nodeType !== 1) return;
+            if (node.shadowRoot) findAndWireForms(node.shadowRoot);
+            findAndWireForms(node);
+          });
+        });
+      });
+
+      var observeRoot = document.body || document.documentElement;
+      if (!observeRoot) return;
+      state.observer.observe(observeRoot, { childList: true, subtree: true });
+    }
+
+    function init() {
+      if (state.initialized) {
+        debug('Already initialized; skipping duplicate init.');
+        return api;
+      }
+
+      if (config.provider !== 'turnstile' && config.provider !== 'recaptcha') {
+        throw new Error('[CIJ Captcha] Invalid provider. Use "turnstile" or "recaptcha".');
+      }
+      if(!config.siteKey) {
+        throw new Error('[CIJ Captcha] siteKey is required.');
+      }
+
+      var eagerLoad = config.provider === 'turnstile' ? loadTurnstileScript : loadRecaptchaScript;
+      if (config.eagerLoad) eagerLoad().catch(function (err) { console.warn(err); });
+
+      document.addEventListener(CIJ_SUBMIT_EVENT, onCijFormSubmit);
+      observeForForms();
+
+      state.initialized = true;
+      debug('Initialized with settings:', config);
+      return api;
+    }
+
+    function destroy() {
+      if (!state.initialized) return;
+
+      document.removeEventListener(CIJ_SUBMIT_EVENT, onCijFormSubmit);
+
+      if (state.observer) {
+        state.observer.disconnect();
+        state.observer = null;
+      }
+
+      state.initialized = false;
+    }
+
+    var api = {
+      init: init,
+      destroy: destroy,
+      getSettings: function () { return config; }
+    };
+
+    return api;
   }
 
-  // ═══════════════════════════════════════════════════════════════════════════
-  // Boot — eager load so the CAPTCHA is warm on first submit
-  // ═══════════════════════════════════════════════════════════════════════════
+  var rootApi = {
+    create: function (settings) {
+      return createInstance(settings);
+    },
+    init: function (settings) {
+      if (!rootApi._defaultInstance) {
+        rootApi._defaultInstance = createInstance(settings);
+      }
+      return rootApi._defaultInstance.init();
+    },
+    version: '2.0.0'
+  };
 
-  var eagerLoad = CAPTCHA_PROVIDER === 'turnstile' ? loadTurnstileScript : loadRecaptchaScript;
-  eagerLoad().catch(function (e) { console.warn(e); });
-
-  // CIJ emits a custom submit event; this is the supported interception point.
-document.addEventListener('d365mkt-formsubmit', onCijFormSubmit);
-document.addEventListener('d365mkt-afterformsubmit', function (event) {
-  console.log('[CIJ Captcha] After form submit:', event);
-  console.log("success - " + event.detail.successful);
-  console.log("payload - " + JSON.stringify(event.detail.payload));
-});
-
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', observeForForms);
-  } else {
-    observeForForms();
-  }
-})();
+  global.CijCaptcha = rootApi;
+})(window);

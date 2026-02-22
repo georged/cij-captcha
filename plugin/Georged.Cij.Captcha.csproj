@@ -3,8 +3,8 @@
   <PropertyGroup>
     <!-- Dataverse plugins must target .NET Framework 4.6.2 -->
     <TargetFramework>net462</TargetFramework>
-    <RootNamespace>CijCaptcha</RootNamespace>
-    <AssemblyName>CijCaptcha</AssemblyName>
+    <RootNamespace>Georged.Cij.Captcha</RootNamespace>
+    <AssemblyName>Georged.Cij.Captcha</AssemblyName>
     <Nullable>disable</Nullable>
     <!-- Strong-name signing is REQUIRED by Dataverse.
          Generate once with: sn -k CijCaptcha.snk
@@ -12,8 +12,8 @@
     <SignAssembly>true</SignAssembly>
     <AssemblyOriginatorKeyFile>CijCaptcha.snk</AssemblyOriginatorKeyFile>
     <Version>$(VersionPrefix)</Version>
-    <AssemblyVersion>1.0.0.7</AssemblyVersion>
-    <FileVersion>1.0.0.7</FileVersion>
+    <AssemblyVersion>1.0.0.8</AssemblyVersion>
+    <FileVersion>1.0.0.8</FileVersion>
   </PropertyGroup>
 
   <ItemGroup>

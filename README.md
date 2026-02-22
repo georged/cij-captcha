@@ -1,9 +1,9 @@
-# CIJ CAPTCHA Integration
+# Customer Insights Journeys CAPTCHA Integration
 
 Protect Customer Insights Journeys (CIJ) forms with server-side CAPTCHA validation.
 
-- Client script: `form-script/cij-captcha.js`
-- Server plugin: `plugin/CaptchaValidationPlugin.cs`
+- Client script: `form-script/`
+- Server plugin: `plugin/`
 - Config app: `code-app/` (**CIJ Captcha Configuration**)
 
 ## Release 1.1.0
@@ -17,34 +17,62 @@ This release supports:
 
 ## Quick Start
 
-1. Download `CIJ_Captcha_managed.zip` from GitHub Release `v1.1.0`.
-2. Import the managed solution into Dataverse.
-3. Open the **CIJ Captcha Configuration** app and configure server-side provider + secret.
-4. Add `data-validate-submission="true"` directly in your CIJ form HTML.
-5. Add the hosted script block (jsDelivr) and initialize with your site key.
-6. Wait for propagation (typically 1–10 minutes), then test on a standalone page.
+1. Download latest [CIJ_Captcha_managed.zip](https://github.com/georged/cij-captcha/releases/latest/download/CIJ_Captcha_managed.zip) managed solution and import it into your Dataverse instance.
 
-### CIJ form HTML (required attribute)
+2. Open the **CIJ Captcha Configuration** app and configure server-side provider + secret.
 
-```html
-<div
-  data-form-id="YOUR_FORM_ID"
-  data-form-api-url="YOUR_FORM_API_URL"
-  data-cached-form-url="YOUR_FORM_CACHED_URL"
-  data-validate-submission="true"
-></div>
-<script src="https://cxppusa1formui01cdnsa01-endpoint.azureedge.net/usa/FormLoader/FormLoader.bundle.js"></script>
-```
 
-### Hosted script (jsDelivr)
+> [!TIP]
+> If using reCaptcha, set threshold to 1.0 to simulate failed tests.
+
+3. Edit HTML source for your form:
+   - Insert the hosted script block after the `<body>`tag and initialize with your site (public) key.
+   - Add `data-validate-submission="true"` attribute to the `<form>` tag.
+
+    ```html
+    ...
+    <body>
+        <script>
+          function initCijCaptcha() {
+            if (!window.CijCaptcha?.init) return;
+            window.CijCaptcha.init({
+              provider: "turnstile",
+              siteKey: "0x4AAAAAACgIREV6KvGbNVQm",
+              enableDebugLogs: true
+            });
+          }
+        </script>
+        <script src="https://cdn.jsdelivr.net/gh/georged/cij-captcha@v1.1.0/form-script/cij-captcha.js"
+          onload="initCijCaptcha()">
+        </script>
+        <main>
+            <form aria-label="Untitled Form" class="marketingForm" data-validate-submission="true">
+              ...
+    ```
+   
+4. Save and publish the form. 
+
+5. Wait for propagation (typically 1–10 minutes), then test on a standalone page.
+
+> [!IMPORTANT]
+>
+> If testing using standalone page don't forget to add `assets-usa.mkt.dynamics.com` to the list of approved domains for your keys.
+
+### Hosted script
 
 Use version-pinned CDN URL:
 
 ```html
-<script src="https://cdn.jsdelivr.net/gh/<owner>/<repo>@v1.1.0/form-script/cij-captcha.js"></script>
+<script src="https://cdn.jsdelivr.net/gh/georged/cij-captcha@v1.1.0/form-script/cij-captcha.js"></script>
 ```
 
-#### Minimal Turnstile init
+If you want latest from default branch (not pinned), use:
+
+```html
+<script src="https://cdn.jsdelivr.net/gh/georged/cij-captcha/form-script/cij-captcha.js"></script>
+```
+
+### Minimal Turnstile init
 
 ```html
 <script>
@@ -55,7 +83,7 @@ Use version-pinned CDN URL:
 </script>
 ```
 
-#### Minimal reCAPTCHA init
+### Minimal reCAPTCHA init
 
 ```html
 <script>
@@ -66,16 +94,9 @@ Use version-pinned CDN URL:
 </script>
 ```
 
-## Server-side configuration (CIJ Captcha Configuration app)
+## Configuration
 
-After importing the managed solution:
-
-1. Launch **CIJ Captcha Configuration**.
-2. Select provider:
-   - `recaptcha`
-   - `turnstile`
-3. For reCAPTCHA, set minimum score (for example `0.7`).
-4. Enter secret key and save.
+### Server-side configuration
 
 Expected plugin configuration values:
 
@@ -83,7 +104,7 @@ Expected plugin configuration values:
 - Turnstile unsecure config: `provider=turnstile`
 - Secure config: provider secret key
 
-## Client script API
+### Client script API
 
 `window.CijCaptcha.init(settings)`
 
@@ -101,8 +122,117 @@ Supported settings:
   - `theme`: `'auto' | 'light' | 'dark'` (default `'auto'`)
   - `tokenReuseTimeout`: number in ms (default `240000`)
 
+#### Multiple form support
+
+If your page includes multiple CIJ Forms Each form, each form tag  still requires `data-validate-submission` attribute however  you can use a single instance of the script.
+
+```html
+<!-- single instance of the captcha script -->
+<script src="https://cdn.jsdelivr.net/gh/georged/cij-captcha@v1.1.0/form-script/cij-captcha.js"></script>
+<script>
+   window.CijCaptcha.init({
+      provider: "recaptcha", 
+      siteKey: "YOUR_RECAPTCHA_SITE_KEY"
+   });
+</script>
+<div
+   data-form-id='form1-guid'
+   data-form-api-url='form1-api-url'
+   data-cached-form-url='form1-cached-url' ></div>
+<div
+   data-form-id='form2-guid'
+   data-form-api-url='form2-api-url'
+   data-cached-form-url='form2-cached-url' ></div>
+<!-- single instance of the form loader (your url may differ) -->
+<script src = 'https://cxppusa1formui01cdnsa01-endpoint.azureedge.net/usa/FormLoader/FormLoader.bundle.js' ></script>
+```
+
+
+
+## Build your own version
+
+### Dataverse Plugin
+
+From repo root:
+
+```bash
+cd plugin
+```
+
+Generate strong-name key file (one-time for local build):
+
+```bash
+sn -k CijCaptcha.snk
+```
+
+Build plugin assembly:
+
+```bash
+dotnet build -c Release
+```
+
+Output DLL:
+
+- `plugin/bin/Release/net462/CijCaptcha.dll`
+
+Register with Plugin Registration Tool:
+
+1. Open Plugin Registration Tool and connect to your Dataverse environment.
+2. Register `CijCaptcha.dll` as a new assembly (Sandbox).
+3. Register step for message `msdynmkt_validateformsubmission` (Synchronous, Post-operation).
+4. Set step configuration:
+   - Unsecure: `provider=recaptcha;minscore=0.7` or `provider=turnstile`
+   - Secure: CAPTCHA secret key
+
+> [!IMPORTANT]
+>
+> Keep `CijCaptcha.snk` private and do not commit private keys.
+
+### Configuration app
+
+From repo root:
+
+```bash
+cd code-app
+npm install
+npm run build
+pac code push --solutionName "CIJ Captcha"
+```
+
+If you deleted/recreated the app and push fails due stale app ID, clear `appId` in `code-app/power.config.json` and push again.
+
+#### Run and debug locally
+
+Use two terminals from `code-app/`:
+
+Terminal 1 (frontend):
+
+```bash
+npm run dev -- --host
+```
+
+Terminal 2 (Power Code Apps bridge):
+
+```bash
+pac code run --port 3000 --appUrl http://localhost:5173
+```
+
+Then open the local/play URL shown by `pac code run` and debug in browser DevTools.
+
 ## Security notes
 
 - Never commit secret keys.
 - Rotate exposed keys immediately if they were ever shared publicly.
 - Keep provider secret only in secure plugin configuration.
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## Copyright
+
+Copyright (c) 2026 George Doubinski
+
+---
+
+**Made with ❤️ for productivity**

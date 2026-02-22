@@ -18,4 +18,5 @@ code-app/node_modules
 code-app/dist
 code-app/.power
 code-app/power.config.json
-code-app/artifacts
+artifacts
+test.html

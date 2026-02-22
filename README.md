@@ -4,7 +4,7 @@ Protect Customer Insights Journeys (CIJ) forms with server-side CAPTCHA validati
 
 - Client script: `form-script/`
 - Server plugin: `plugin/`
-- Config app: `code-app/` (**CIJ Captcha Configuration**)
+- Config app: `code-app/`
 
 ## Release 1.1.0
 
@@ -20,7 +20,7 @@ This release supports:
 1. Download latest [CIJ_Captcha_managed.zip](https://github.com/georged/cij-captcha/releases/latest/download/CIJ_Captcha_managed.zip) managed solution and import it into your Dataverse instance.
 
 2. Open the **CIJ Captcha Configuration** app and configure server-side provider + secret.
-
+   <img width="845" height="456" alt="image" src="https://github.com/user-attachments/assets/6270167c-a4e0-4c8e-856d-596a9ee3b09d" />
 
 > [!TIP]
 > If using reCaptcha, set threshold to 1.0 to simulate failed tests.
@@ -36,9 +36,8 @@ This release supports:
           function initCijCaptcha() {
             if (!window.CijCaptcha?.init) return;
             window.CijCaptcha.init({
-              provider: "turnstile",
-              siteKey: "0x4AAAAAACgIREV6KvGbNVQm",
-              enableDebugLogs: true
+              provider: "recaptcha",
+              siteKey: "YOUR_RECAPTCHA_KEY"
             });
           }
         </script>
@@ -54,9 +53,9 @@ This release supports:
 
 5. Wait for propagation (typically 1–10 minutes), then test on a standalone page.
 
-> [!IMPORTANT]
+> [!TIP]
 >
-> If testing using standalone page don't forget to add `assets-usa.mkt.dynamics.com` to the list of approved domains for your keys.
+> Don't forget to add `assets-usa.mkt.dynamics.com` to the list of approved domains for your captcha keys.
 
 ### Hosted script
 

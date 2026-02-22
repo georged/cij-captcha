@@ -18,15 +18,14 @@ npm run dev
 
 ## Dataverse integration (Code Apps pattern)
 
-This app does not use `Xrm.WebApi`.
-
-To connect it to Dataverse in a Code Apps-compliant way:
+To connect it to Dataverse:
 
 1. Install/sign in to PAC CLI and select the target environment.
-2. Add Dataverse data sources for the required tables using `pac code add-data-source`.
-3. Implement and register `registerPluginConfigImplementation(...)` from
-	`src/services/pluginConfigService.ts` using generated services from
-	`src/generated/services/*`.
+2. Add Dataverse data sources for the required tables using `pac code add-data-source`. Required tables:
+   - `plugintype`
+   - `sdkmessage`
+   - `sdkmessageprocessingstep`
+   - `sdkmessageprocessingstepsecureconfig`
 
 Until that implementation is registered, the app shows a clear setup message and won't save.
 

@@ -30,7 +30,10 @@ export type SaveRequest = {
 };
 
 const normalize = (value: string): string => value.replace(/[{}]/g, '').trim().toLowerCase();
-const logDebug = (...args: unknown[]) => console.log('[CIJ Config Debug]', ...args);
+const logDebug = (enabled: boolean, ...args: unknown[]) => {
+  if (!enabled) return;
+  console.log('[CIJ Config Debug]', ...args);
+};
 export const isPluginConfigDebugEnabled = (): boolean => {
   if (typeof window === 'undefined') return true;
 
@@ -50,18 +53,14 @@ const shortList = (values: string[]): string => values.slice(0, 10).join(', ');
 export async function resolvePluginStep(request: ResolveRequest): Promise<ResolvedPluginStep> {
   const debug = isPluginConfigDebugEnabled();
 
-  if (debug) {
-    logDebug('resolvePluginStep request', request);
-  }
+  logDebug(debug, 'resolvePluginStep request', request);
 
   const pluginTypeResult = await PlugintypesService.getAll({
     select: ['plugintypeid', 'typename'],
     filter: `typename eq '${request.pluginTypeName.replace(/'/g, "''")}'`
   });
 
-  if (debug) {
-    logDebug('pluginType exact result', pluginTypeResult.data);
-  }
+  logDebug(debug, 'pluginType exact result', pluginTypeResult.data);
 
   let pluginType = pluginTypeResult.data?.[0];
   if (!pluginType?.plugintypeid) {
@@ -72,9 +71,7 @@ export async function resolvePluginStep(request: ResolveRequest): Promise<Resolv
       top: 25
     });
 
-    if (debug) {
-      logDebug('pluginType fallback result', pluginTypeFallback.data);
-    }
+    logDebug(debug, 'pluginType fallback result', pluginTypeFallback.data);
 
     if (pluginTypeFallback.data?.length === 1) {
       pluginType = pluginTypeFallback.data[0];
@@ -99,9 +96,7 @@ export async function resolvePluginStep(request: ResolveRequest): Promise<Resolv
     filter: `name eq '${request.messageName.replace(/'/g, "''")}'`
   });
 
-  if (debug) {
-    logDebug('sdkmessage exact result', messageResult.data);
-  }
+  logDebug(debug, 'sdkmessage exact result', messageResult.data);
 
   const sdkMessage = messageResult.data?.[0];
   if (!sdkMessage?.sdkmessageid) {
@@ -111,9 +106,7 @@ export async function resolvePluginStep(request: ResolveRequest): Promise<Resolv
       top: 25
     });
 
-    if (debug) {
-      logDebug('sdkmessage fallback result', messageFallback.data);
-    }
+    logDebug(debug, 'sdkmessage fallback result', messageFallback.data);
 
     const candidates = (messageFallback.data || [])
       .map((x) => x.name || '')
@@ -136,7 +129,8 @@ export async function resolvePluginStep(request: ResolveRequest): Promise<Resolv
       'statecode',
       '_eventhandler_value',
       '_plugintypeid_value',
-      '_sdkmessageid_value'
+      '_sdkmessageid_value',
+      '_sdkmessageprocessingstepsecureconfigid_value'
     ],
     filter:
       `_eventhandler_value eq ${pluginType.plugintypeid} and ` +
@@ -146,10 +140,8 @@ export async function resolvePluginStep(request: ResolveRequest): Promise<Resolv
 
   const matchingSteps: Sdkmessageprocessingsteps[] = stepResult.data || [];
 
-  if (debug) {
-    logDebug('steps total count', matchingSteps.length);
-    logDebug('matching step ids', matchingSteps.map((x) => x.sdkmessageprocessingstepid));
-  }
+  logDebug(debug, 'steps total count', matchingSteps.length);
+  logDebug(debug, 'matching step ids', matchingSteps.map((x) => x.sdkmessageprocessingstepid));
 
   if (!matchingSteps.length) {
     const samePluginType = (stepResult.data || [])
@@ -170,6 +162,8 @@ export async function resolvePluginStep(request: ResolveRequest): Promise<Resolv
     matchingSteps.find((step) => Number(step.stage) === 40 && Number(step.mode) === 0) ||
     matchingSteps[0];
 
+  logDebug(debug, 'preferred step:', preferredStep);
+
   return {
     stepId: preferredStep.sdkmessageprocessingstepid,
     configuration: preferredStep.configuration || ''
@@ -178,16 +172,10 @@ export async function resolvePluginStep(request: ResolveRequest): Promise<Resolv
 
 export async function savePluginConfiguration(request: SaveRequest): Promise<void> {
   const debug = isPluginConfigDebugEnabled();
-  if (debug) {
-    logDebug('savePluginConfiguration request', {
-      stepId: request.stepId,
-      unsecureConfig: request.unsecureConfig,
-      secureConfigLength: request.secureConfig.length
-    });
-  }
-
-  await SdkmessageprocessingstepsService.update(request.stepId, {
-    configuration: request.unsecureConfig
+  logDebug(debug, 'savePluginConfiguration request', {
+    stepId: request.stepId,
+    unsecureConfig: request.unsecureConfig,
+    secureConfigLength: request.secureConfig.length
   });
 
   const stepResult = await SdkmessageprocessingstepsService.get(request.stepId, {
@@ -197,27 +185,34 @@ export async function savePluginConfiguration(request: SaveRequest): Promise<voi
   const step = stepResult.data;
   const existingSecureConfigId = step?._sdkmessageprocessingstepsecureconfigid_value;
 
-  if (debug) {
-    logDebug('existing secure config id', existingSecureConfigId);
-  }
+  logDebug(debug, 'existing secure config id', existingSecureConfigId);
 
-  if (existingSecureConfigId) {
-    await SdkmessageprocessingstepsecureconfigsService.update(existingSecureConfigId, {
+  let secureConfigIdToBind = existingSecureConfigId;
+
+  if (secureConfigIdToBind) {
+    logDebug(debug, 'updating existing secure config');
+    await SdkmessageprocessingstepsecureconfigsService.update(secureConfigIdToBind, {
       secureconfig: request.secureConfig
     });
-    return;
+  } else {
+    logDebug(debug, 'creating new secure config');
+    const createResult = await SdkmessageprocessingstepsecureconfigsService.create({
+      secureconfig: request.secureConfig
+    });
+
+    const createdId = createResult.data?.sdkmessageprocessingstepsecureconfigid;
+    if (!createdId) {
+      throw new ConfigDataAccessError('Secure config was created but no id was returned.');
+    }
+
+    secureConfigIdToBind = createdId;
   }
 
-  const createResult = await SdkmessageprocessingstepsecureconfigsService.create({
-    secureconfig: request.secureConfig
-  });
+  logDebug(debug, 'updating step with unsecure config and secure config id', request.unsecureConfig, secureConfigIdToBind);
+  const stepUpdatePayload: Record<string, unknown> = {
+    configuration: request.unsecureConfig,
+    'sdkmessageprocessingstepsecureconfigid@odata.bind': `/sdkmessageprocessingstepsecureconfigs(${secureConfigIdToBind})`
+  };
 
-  const createdId = createResult.data?.sdkmessageprocessingstepsecureconfigid;
-  if (!createdId) {
-    throw new ConfigDataAccessError('Secure config was created but no id was returned.');
-  }
-
-  await SdkmessageprocessingstepsService.update(request.stepId, {
-    'SdkMessageProcessingStepSecureConfigId@odata.bind': `/sdkmessageprocessingstepsecureconfigs(${createdId})`
-  });
+  await SdkmessageprocessingstepsService.update(request.stepId, stepUpdatePayload as never);
 }

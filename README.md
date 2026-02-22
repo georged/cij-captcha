@@ -14,6 +14,7 @@ This release supports:
 - Hosted client script via jsDelivr (no self-hosting required)
 - Script init API: `window.CijCaptcha.init({...})`
 - Provider support: Google reCAPTCHA v3 and Cloudflare Turnstile
+- Multi-form support
 
 ## Quick Start
 
@@ -57,9 +58,22 @@ This release supports:
 >
 > Don't forget to add `assets-usa.mkt.dynamics.com` to the list of approved domains for your captcha keys.
 
-### Hosted script
+------------------
+## Configuration
 
-Use version-pinned CDN URL:
+### Server-side configuration
+
+Expected plugin configuration values:
+
+- reCAPTCHA unsecure config: `provider=recaptcha;minscore=0.7`
+- Turnstile unsecure config: `provider=turnstile`
+- Secure config: provider secret key
+
+### Client-side script
+
+Client-side requires cij-captcha.js script and a call to `CijCaptcha.init()` method.
+
+You can copy and paste the entire script but it's more efficient to use version-pinned CDN URL:
 
 ```html
 <script src="https://cdn.jsdelivr.net/gh/georged/cij-captcha@v1.1.0/form-script/cij-captcha.js"></script>
@@ -92,16 +106,6 @@ If you want latest from default branch (not pinned), use:
   });
 </script>
 ```
-
-## Configuration
-
-### Server-side configuration
-
-Expected plugin configuration values:
-
-- reCAPTCHA unsecure config: `provider=recaptcha;minscore=0.7`
-- Turnstile unsecure config: `provider=turnstile`
-- Secure config: provider secret key
 
 ### Client script API
 

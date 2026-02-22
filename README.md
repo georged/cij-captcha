@@ -56,7 +56,7 @@ This release supports:
 
 > [!TIP]
 >
-> Don't forget to add `assets-usa.mkt.dynamics.com` to the list of approved domains for your captcha keys.
+> Don't forget to add form hosting domain (e.g. `assets-usa.mkt.dynamics.com`) to the list of approved domains for your captcha keys. 
 
 ------------------
 ## Configuration

@@ -25,7 +25,7 @@ This release supports:
 
 3. Configure server-side provider + secret.
 
-   ![image-20260223200738522](../../../Library/Application Support/typora-user-images/image-20260223200738522.png)
+   ![Configuration page in the solution](docs/images/config-page.png)
 
 > [!TIP]
 > If using reCaptcha, try setting threshold to 1.0 to simulate failed tests.

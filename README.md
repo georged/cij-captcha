@@ -6,7 +6,7 @@ Protect Customer Insights Journeys (CIJ) forms with server-side CAPTCHA validati
 - Server plugin: `plugin/`
 - Config app: `code-app/`
 
-## Release 1.1.0
+## Release 1.1.0.2
 
 This release supports:
 
@@ -15,16 +15,20 @@ This release supports:
 - Script init API: `window.CijCaptcha.init({...})`
 - Provider support: Google reCAPTCHA v3 and Cloudflare Turnstile
 - Multi-form support
+- Solution configuration
 
 ## Quick Start
 
 1. Download latest [CIJ_Captcha_managed.zip](https://github.com/georged/cij-captcha/releases/latest/download/CIJ_Captcha_managed.zip) managed solution and import it into your Dataverse instance.
 
-2. Open the **CIJ Captcha Configuration** app and configure server-side provider + secret.
-   <img width="845" height="456" alt="image" src="https://github.com/user-attachments/assets/6270167c-a4e0-4c8e-856d-596a9ee3b09d" />
+2. Open the imported solution, select **Overview** tab, then select **View page** link under **Configuration page**.
+
+3. Configure server-side provider + secret.
+
+   ![image-20260223200738522](../../../Library/Application Support/typora-user-images/image-20260223200738522.png)
 
 > [!TIP]
-> If using reCaptcha, set threshold to 1.0 to simulate failed tests.
+> If using reCaptcha, try setting threshold to 1.0 to simulate failed tests.
 
 3. Edit HTML source for your form:
    - Insert the hosted script block after the `<body>`tag and initialize with your site (public) key.
@@ -63,7 +67,7 @@ This release supports:
 
 ### Server-side configuration
 
-Expected plugin configuration values:
+Instead of the solution configuration page, administrators can use **Plugin Registration Tool** and configure **secureConfig** and **unsecureConfig** values:
 
 - reCAPTCHA unsecure config: `provider=recaptcha;minscore=0.7`
 - Turnstile unsecure config: `provider=turnstile`
@@ -192,6 +196,12 @@ Register with Plugin Registration Tool:
 > Keep `CijCaptcha.snk` private and do not commit private keys.
 
 ### Configuration app
+
+This app is an experimental code app and is an alternative to the configuration page.
+
+>  [!NOTE]
+>
+> Solution no longer includes this app but you can use source code to build and publish it in your Dataverse instance.
 
 From repo root:
 

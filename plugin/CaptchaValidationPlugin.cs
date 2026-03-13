@@ -11,6 +11,12 @@ using Microsoft.Xrm.Sdk;
 
 namespace Georged.Cij.Captcha
 {
+    public enum RecaptchaMode
+    {
+        Standard,
+        Enterprise
+    }
+
     /// <summary>
     /// Supported CAPTCHA providers.
     /// </summary>
@@ -54,8 +60,11 @@ namespace Georged.Cij.Captcha
     /// </summary>
     public class CaptchaValidationPlugin : IPlugin
     {
+        private const string DefaultValidationFailureMessage = "Captcha test failed.";
+
         // ── Provider verification endpoints ───────────────────────────────────
         private const string RecaptchaVerifyUrl = "https://www.google.com/recaptcha/api/siteverify";
+        private const string RecaptchaEnterpriseAssessmentsBaseUrl = "https://recaptchaenterprise.googleapis.com/v1/projects";
         private const string TurnstileVerifyUrl = "https://challenges.cloudflare.com/turnstile/v0/siteverify";
 
         // ── Form field names (must match the hidden field name on the CIJ form) ─
@@ -64,7 +73,13 @@ namespace Georged.Cij.Captcha
         // ── Runtime configuration (populated from plug-in config at registration) ─
         private readonly CaptchaProvider _provider;
         private readonly string          _secretKey;
+        private readonly string          _enterpriseApiKey;
         private readonly double          _minScore;
+        private readonly RecaptchaMode   _recaptchaMode;
+        private readonly string          _recaptchaProjectId;
+        private readonly string          _recaptchaSiteKey;
+        private readonly string          _recaptchaExpectedAction;
+        private readonly string          _validationFailureMessage;
 
         /// <summary>
         /// Parameterless constructor — requires Unsecure and Secure Config to be
@@ -91,9 +106,42 @@ namespace Georged.Cij.Captcha
                     "Provide the CAPTCHA secret key in the Secure Configuration field " +
                     "of the Plugin Registration Tool step.");
 
-            _secretKey = secureConfig.Trim();
-            _provider  = ParseProvider(unsecureConfig);
-            _minScore  = ParseMinScore(unsecureConfig);
+            _provider = ParseProvider(unsecureConfig);
+            _minScore = ParseMinScore(unsecureConfig);
+            _recaptchaMode = ParseRecaptchaMode(unsecureConfig);
+            _recaptchaProjectId = ParseConfigValue(unsecureConfig, "projectid");
+            _recaptchaSiteKey = ParseConfigValue(unsecureConfig, "sitekey");
+            _recaptchaExpectedAction = ParseConfigValue(unsecureConfig, "expectedaction");
+            _validationFailureMessage = ParseConfigValue(unsecureConfig, "failuremessage");
+
+            var secureValues = ParseSecureConfigValues(secureConfig);
+            _secretKey = secureValues.secretKey;
+            _enterpriseApiKey = secureValues.enterpriseApiKey;
+
+            if (_provider == CaptchaProvider.GoogleRecaptchaV3 && _recaptchaMode == RecaptchaMode.Enterprise)
+            {
+                if (string.IsNullOrWhiteSpace(_enterpriseApiKey))
+                    throw new InvalidPluginExecutionException(
+                        "[CijCaptcha] Missing reCAPTCHA Enterprise API key. " +
+                        "Set secure config to either the API key value or 'apikey=<value>'.");
+
+                if (string.IsNullOrWhiteSpace(_recaptchaProjectId))
+                    throw new InvalidPluginExecutionException(
+                        "[CijCaptcha] Missing Enterprise project id in unsecure config. " +
+                        "Set 'projectid=<gcp-project-id>'.");
+
+                if (string.IsNullOrWhiteSpace(_recaptchaSiteKey))
+                    throw new InvalidPluginExecutionException(
+                        "[CijCaptcha] Missing Enterprise site key in unsecure config. " +
+                        "Set 'sitekey=<enterprise-site-key>'.");
+            }
+            else
+            {
+                if (string.IsNullOrWhiteSpace(_secretKey))
+                    throw new InvalidPluginExecutionException(
+                        "[CijCaptcha] Secure Config is empty. " +
+                        "Provide the CAPTCHA secret key in Secure Config.");
+            }
         }
 
         // ── IPlugin.Execute ────────────────────────────────────────────────────
@@ -105,7 +153,7 @@ namespace Georged.Cij.Captcha
             var context = (IPluginExecutionContext)
                 serviceProvider.GetService(typeof(IPluginExecutionContext));
 
-            tracingService.Trace($"[CijCaptcha] Executing. Provider={_provider}");
+            tracingService.Trace($"[CijCaptcha] Executing. Provider={_provider}; recaptchaMode={_recaptchaMode}");
 
             // ── 1. Read the raw form submission JSON ───────────────────────────
             if (!context.InputParameters.Contains("msdynmkt_formsubmissionrequest"))
@@ -139,14 +187,85 @@ namespace Georged.Cij.Captcha
                     break;
 
                 default: // GoogleRecaptchaV3
-                    isValid = VerifyRecaptcha(captchaToken, tracingService);
+                    isValid = _recaptchaMode == RecaptchaMode.Enterprise
+                        ? VerifyRecaptchaEnterprise(captchaToken, tracingService)
+                        : VerifyRecaptcha(captchaToken, tracingService);
                     break;
             }
 
             tracingService.Trace($"[CijCaptcha] Final result: isValid={isValid}");
 
             // ── 4. Write the outcome back to CIJ ──────────────────────────────
-            SetValidationResponse(context, isValid, fieldName: CaptchaFieldName, isValid ? null:"Captcha test failed.");
+            SetValidationResponse(
+                context,
+                isValid,
+                fieldName: CaptchaFieldName,
+                isValid ? null : GetValidationFailureMessage());
+        }
+
+        private string GetValidationFailureMessage()
+        {
+            return string.IsNullOrWhiteSpace(_validationFailureMessage)
+                ? DefaultValidationFailureMessage
+                : _validationFailureMessage;
+        }
+
+        /// <summary>
+        /// Verifies token with reCAPTCHA Enterprise assessments API.
+        /// </summary>
+        private bool VerifyRecaptchaEnterprise(string token, ITracingService tracingService)
+        {
+            var expectedAction = string.IsNullOrWhiteSpace(_recaptchaExpectedAction)
+                ? "cij_form_submit"
+                : _recaptchaExpectedAction;
+
+            var endpoint =
+                RecaptchaEnterpriseAssessmentsBaseUrl + "/" + Uri.EscapeDataString(_recaptchaProjectId) +
+                "/assessments?key=" + Uri.EscapeDataString(_enterpriseApiKey);
+
+            var payload =
+                "{\"event\":{\"token\":\"" + EscapeJson(token) +
+                "\",\"siteKey\":\"" + EscapeJson(_recaptchaSiteKey) +
+                "\",\"expectedAction\":\"" + EscapeJson(expectedAction) + "\"}}";
+
+            var raw = PostJsonToVerifyEndpoint(endpoint, payload, tracingService);
+            if (raw == null) return false;
+
+            var response = Deserialize<RecaptchaEnterpriseAssessResponse>(raw);
+            var valid = response != null && response.tokenProperties != null && response.tokenProperties.valid;
+
+            var score = response != null && response.riskAnalysis != null ? response.riskAnalysis.score : 0.0;
+            var action = response != null && response.tokenProperties != null ? response.tokenProperties.action : null;
+            var invalidReason = response != null && response.tokenProperties != null
+                ? response.tokenProperties.invalidReason
+                : null;
+
+            tracingService.Trace(
+                "[CijCaptcha] reCAPTCHA Enterprise: " +
+                "valid=" + valid + ", score=" + score + ", action=" + action + ", invalidReason=" + invalidReason);
+
+            if (!valid)
+            {
+                tracingService.Trace("[CijCaptcha] Enterprise token is invalid.");
+                return false;
+            }
+
+            if (!string.IsNullOrWhiteSpace(expectedAction) &&
+                !string.IsNullOrWhiteSpace(action) &&
+                !string.Equals(action, expectedAction, StringComparison.Ordinal))
+            {
+                tracingService.Trace("[CijCaptcha] Enterprise action mismatch.");
+                return false;
+            }
+
+            if (score < _minScore)
+            {
+                tracingService.Trace(
+                    "[CijCaptcha] Enterprise score " + score + " below threshold " + _minScore + ".");
+                return false;
+            }
+
+            return true;
         }
 
         // ── Provider verification ──────────────────────────────────────────────
@@ -253,6 +372,38 @@ namespace Georged.Cij.Captcha
             }
         }
 
+        /// <summary>
+        /// Sends a JSON POST and returns response body, or null when the call fails.
+        /// </summary>
+        private string PostJsonToVerifyEndpoint(string url, string payload, ITracingService tracingService)
+        {
+            using (var client = new HttpClient())
+            {
+                try
+                {
+                    var content = new StringContent(payload, Encoding.UTF8, "application/json");
+                    var response = client.PostAsync(url, content).Result;
+
+                    if (!response.IsSuccessStatusCode)
+                    {
+                        tracingService.Trace(
+                            "[CijCaptcha] Verify endpoint " + url +
+                            " returned HTTP " + (int)response.StatusCode + ".");
+                        return null;
+                    }
+
+                    var body = response.Content.ReadAsStringAsync().Result;
+                    tracingService.Trace("[CijCaptcha] Verify response: " + body);
+                    return body;
+                }
+                catch (Exception ex)
+                {
+                    tracingService.Trace("[CijCaptcha] Exception calling " + url + ": " + ex.Message);
+                    return null;
+                }
+            }
+        }
+
         // ── Output helper ──────────────────────────────────────────────────────
 
         private void SetValidationResponse(
@@ -283,6 +434,81 @@ namespace Georged.Cij.Captcha
             if (lower.Contains("recaptcha"))  return CaptchaProvider.GoogleRecaptchaV3;
 
             return CaptchaProvider.GoogleRecaptchaV3;
+        }
+
+        private static RecaptchaMode ParseRecaptchaMode(string config)
+        {
+            var value = ParseConfigValue(config, "recaptchamode");
+            if (string.Equals(value, "enterprise", StringComparison.OrdinalIgnoreCase))
+            {
+                return RecaptchaMode.Enterprise;
+            }
+
+            return RecaptchaMode.Standard;
+        }
+
+        private static string ParseConfigValue(string config, string key)
+        {
+            if (string.IsNullOrWhiteSpace(config)) return null;
+
+            foreach (var part in config.Split(';'))
+            {
+                var kv = part.Trim().Split('=');
+                if (kv.Length < 2) continue;
+
+                if (kv[0].Trim().Equals(key, StringComparison.OrdinalIgnoreCase))
+                {
+                    return DecodeConfigValue(string.Join("=", kv.Skip(1)).Trim());
+                }
+            }
+
+            return null;
+        }
+
+        private static string DecodeConfigValue(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value)) return value;
+
+            try
+            {
+                return Uri.UnescapeDataString(value);
+            }
+            catch
+            {
+                return value;
+            }
+        }
+
+        private static (string secretKey, string enterpriseApiKey) ParseSecureConfigValues(string secureConfig)
+        {
+            var raw = (secureConfig ?? string.Empty).Trim();
+            if (!raw.Contains("="))
+            {
+                return (raw, raw);
+            }
+
+            string secret = null;
+            string apiKey = null;
+
+            foreach (var part in raw.Split(';'))
+            {
+                var kv = part.Trim().Split('=');
+                if (kv.Length < 2) continue;
+
+                var key = kv[0].Trim().ToLowerInvariant();
+                var value = string.Join("=", kv.Skip(1)).Trim();
+                if (key == "secret" || key == "secretkey") secret = value;
+                if (key == "apikey" || key == "enterpriseapikey") apiKey = value;
+            }
+
+            return (secret, apiKey);
+        }
+
+        private static string EscapeJson(string value)
+        {
+            return (value ?? string.Empty)
+                .Replace("\\", "\\\\")
+                .Replace("\"", "\\\"");
         }
 
         private static double ParseMinScore(string config)
@@ -392,6 +618,36 @@ namespace Georged.Cij.Captcha
 
         [DataMember(Name = "cdata")]
         public string cdata { get; set; }
+    }
+
+    [DataContract]
+    public class RecaptchaEnterpriseAssessResponse
+    {
+        [DataMember(Name = "tokenProperties")]
+        public RecaptchaEnterpriseTokenProperties tokenProperties { get; set; }
+
+        [DataMember(Name = "riskAnalysis")]
+        public RecaptchaEnterpriseRiskAnalysis riskAnalysis { get; set; }
+    }
+
+    [DataContract]
+    public class RecaptchaEnterpriseTokenProperties
+    {
+        [DataMember(Name = "valid")]
+        public bool valid { get; set; }
+
+        [DataMember(Name = "action")]
+        public string action { get; set; }
+
+        [DataMember(Name = "invalidReason")]
+        public string invalidReason { get; set; }
+    }
+
+    [DataContract]
+    public class RecaptchaEnterpriseRiskAnalysis
+    {
+        [DataMember(Name = "score")]
+        public double score { get; set; }
     }
 
     [DataContract]

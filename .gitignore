@@ -11,7 +11,7 @@ Thumbs.db
 .vs
 .cursor
 .github
-.vscode
+
 __azurite_db_blob__.json
 __azurite_db_blob_extent__.json
 code-app/node_modules
@@ -20,3 +20,6 @@ code-app/.power
 code-app/power.config.json
 artifacts
 test.html
+verify-api/node_modules
+verify-api/.env
+.vscode

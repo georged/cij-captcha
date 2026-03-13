@@ -4,7 +4,6 @@ import {
   SdkmessageprocessingstepsService,
   SdkmessageprocessingstepsecureconfigsService
 } from '../generated';
-import type { Sdkmessageprocessingsteps } from '../generated/models/SdkmessageprocessingstepsModel';
 
 export class ConfigDataAccessError extends Error {
   constructor(message: string) {
@@ -29,7 +28,6 @@ export type SaveRequest = {
   secureConfig: string;
 };
 
-const normalize = (value: string): string => value.replace(/[{}]/g, '').trim().toLowerCase();
 const logDebug = (enabled: boolean, ...args: unknown[]) => {
   if (!enabled) return;
   console.log('[CIJ Config Debug]', ...args);
@@ -120,47 +118,30 @@ export async function resolvePluginStep(request: ResolveRequest): Promise<Resolv
     );
   }
 
+  const select = [
+    'sdkmessageprocessingstepid',
+    'configuration',
+    'statecode',
+    '_sdkmessageprocessingstepsecureconfigid_value'
+  ] as const;
+
   const stepResult = await SdkmessageprocessingstepsService.getAll({
-    select: [
-      'sdkmessageprocessingstepid',
-      'configuration',
-      'stage',
-      'mode',
-      'statecode',
-      '_eventhandler_value',
-      '_plugintypeid_value',
-      '_sdkmessageid_value',
-      '_sdkmessageprocessingstepsecureconfigid_value'
-    ],
-    filter:
-      `_eventhandler_value eq ${pluginType.plugintypeid} and ` +
-      `_sdkmessageid_value eq ${sdkMessage.sdkmessageid} and ` +
-      `statecode eq 0`
+    select: [...select],
+    filter: `_sdkmessageid_value eq ${sdkMessage.sdkmessageid} and statecode eq 0`,
+    top: 1
   });
 
-  const matchingSteps: Sdkmessageprocessingsteps[] = stepResult.data || [];
+  const steps = stepResult.data || [];
 
-  logDebug(debug, 'steps total count', matchingSteps.length);
-  logDebug(debug, 'matching step ids', matchingSteps.map((x) => x.sdkmessageprocessingstepid));
+  logDebug(debug, 'steps returned', steps.length);
 
-  if (!matchingSteps.length) {
-    const samePluginType = (stepResult.data || [])
-      .map(
-        (step) =>
-          `${step.sdkmessageprocessingstepid}|state=${step.statecode}|stage=${step.stage}|mode=${step.mode}|sdkmessage=${step._sdkmessageid_value}|handler=${step._eventhandler_value}`
-      );
-
+  if (!steps.length) {
     throw new ConfigDataAccessError(
-      'No active plugin step found for this plugin type and message. ' +
-      (samePluginType.length
-        ? `Steps for plugin type: ${shortList(samePluginType)}`
-        : 'No steps found for this plugin type.')
+      'No active plugin step found for this message.'
     );
   }
 
-  const preferredStep =
-    matchingSteps.find((step) => Number(step.stage) === 40 && Number(step.mode) === 0) ||
-    matchingSteps[0];
+  const preferredStep = steps[0];
 
   logDebug(debug, 'preferred step:', preferredStep);
 

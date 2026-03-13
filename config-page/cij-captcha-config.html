@@ -95,12 +95,14 @@
 
     input,
     select,
+    textarea,
     button {
       font: inherit;
     }
 
     input,
-    select {
+    select,
+    textarea {
       width: 100%;
       box-sizing: border-box;
       border: 1px solid #9ca3af;
@@ -108,6 +110,11 @@
       padding: 8px 10px;
       background: #fff;
       color: #111827;
+    }
+
+    textarea {
+      min-height: 180px;
+      resize: vertical;
     }
 
     .secret-row {
@@ -188,6 +195,34 @@
           <input id="minscore" name="minscore" type="number" min="0" max="1" step="0.1" value="0.5" />
         </label>
 
+        <label id="recaptcha-mode-container" for="recaptcha-mode">
+          reCAPTCHA mode
+          <select id="recaptcha-mode" name="recaptcha-mode">
+            <option value="standard">Standard</option>
+            <option value="enterprise">Enterprise</option>
+          </select>
+        </label>
+
+        <label id="projectid-container" for="projectid">
+          Enterprise project id
+          <input id="projectid" name="projectid" type="text" placeholder="my-gcp-project-id" />
+        </label>
+
+        <label id="sitekey-container" for="sitekey">
+          Enterprise site key
+          <input id="sitekey" name="sitekey" type="text" placeholder="6Lxxxxxxxxxxxxxxxx" />
+        </label>
+
+        <label id="expectedaction-container" for="expectedaction">
+          Expected action
+          <input id="expectedaction" name="expectedaction" type="text" value="cij_form_submit" />
+        </label>
+
+        <label for="failuremessage">
+          Plugin validation failure message
+          <input id="failuremessage" name="failuremessage" type="text" placeholder="Captcha test failed." />
+        </label>
+
         <label for="secret">
           Secret key
           <div class="secret-row">
@@ -201,6 +236,47 @@
         <button id="save-btn" type="submit">Save Configuration</button>
         <div id="status" class="status">Loading configuration...</div>
       </div>
+
+      <label for="snippet-sitekey">
+        Snippet site key
+        <input id="snippet-sitekey" type="text" placeholder="YOUR_SITE_KEY" />
+      </label>
+
+      <label for="snippet-endpoint">
+        Snippet verify endpoint
+        <input id="snippet-endpoint" type="text" placeholder="https://YOUR_FUNCTION_HOST/api/captcha/verify" />
+      </label>
+
+      <label for="snippet-timeout">
+        Snippet timeout (ms)
+        <input id="snippet-timeout" type="number" min="1000" step="500" value="8000" />
+      </label>
+
+      <label for="snippet-presubmit">
+        Snippet pre-submit enabled
+        <select id="snippet-presubmit">
+          <option value="true">true</option>
+          <option value="false">false</option>
+        </select>
+      </label>
+
+      <label for="snippet-debug">
+        Snippet debug logging
+        <select id="snippet-debug">
+          <option value="false">false</option>
+          <option value="true">true</option>
+        </select>
+      </label>
+
+      <label for="snippet-failure">
+        Snippet validation failure message override
+        <input id="snippet-failure" type="text" placeholder="Leave blank to use the server-returned message" />
+      </label>
+
+      <label for="snippet-output">
+        Ready-to-paste init snippet
+        <textarea id="snippet-output" rows="14" readonly></textarea>
+      </label>
     </form>
 
     <div class="hint">Don't forget to add form hosting domain (e.g. `assets-usa.mkt.dynamics.com`) to the list of approved domains for your captcha keys.</div>
@@ -241,8 +317,24 @@
       }
 
       function parseUnsecureConfig(config) {
-        var result = { provider: 'recaptcha', minscore: 0.5 };
+        var result = {
+          provider: 'recaptcha',
+          minscore: 0.5,
+          recaptchamode: 'standard',
+          projectid: '',
+          sitekey: '',
+          expectedaction: 'cij_form_submit',
+          failuremessage: ''
+        };
         if (!config) return result;
+
+        function decodeConfigValue(value) {
+          try {
+            return decodeURIComponent(value);
+          } catch (error) {
+            return value;
+          }
+        }
 
         var parts = String(config).split(';');
         for (var i = 0; i < parts.length; i++) {
@@ -262,6 +354,26 @@
               result.minscore = clamp(parsed);
             }
           }
+
+          if (key === 'recaptchamode' && (value === 'standard' || value === 'enterprise')) {
+            result.recaptchamode = value;
+          }
+
+          if (key === 'projectid') {
+            result.projectid = pair.slice(1).join('=').trim();
+          }
+
+          if (key === 'sitekey') {
+            result.sitekey = pair.slice(1).join('=').trim();
+          }
+
+          if (key === 'expectedaction') {
+            result.expectedaction = decodeConfigValue(pair.slice(1).join('=').trim());
+          }
+
+          if (key === 'failuremessage') {
+            result.failuremessage = decodeConfigValue(pair.slice(1).join('=').trim());
+          }
         }
 
         return result;
@@ -269,17 +381,92 @@
 
       function getUnsecureConfig() {
         var provider = document.getElementById('provider').value;
-        if (provider === 'turnstile') return 'provider=turnstile';
+        if (provider === 'turnstile') {
+          var turnstileParts = ['provider=turnstile'];
+          var turnstileFailureMessage = document.getElementById('failuremessage').value.trim();
+          if (turnstileFailureMessage) {
+            turnstileParts.push('failuremessage=' + encodeURIComponent(turnstileFailureMessage));
+          }
+          return turnstileParts.join(';');
+        }
 
+        var recaptchaMode = document.getElementById('recaptcha-mode').value;
+        var projectId = document.getElementById('projectid').value.trim();
+        var siteKey = document.getElementById('sitekey').value.trim();
+        var expectedAction = document.getElementById('expectedaction').value.trim();
+        var failureMessage = document.getElementById('failuremessage').value.trim();
         var minScoreRaw = Number(document.getElementById('minscore').value);
         var minScore = Number.isNaN(minScoreRaw) ? 0.5 : clamp(minScoreRaw);
-        return 'provider=recaptcha;minscore=' + minScore;
+
+        var parts = [
+          'provider=recaptcha',
+          'recaptchamode=' + recaptchaMode,
+          'minscore=' + minScore
+        ];
+
+        if (expectedAction) parts.push('expectedaction=' + expectedAction);
+        if (failureMessage) parts.push('failuremessage=' + encodeURIComponent(failureMessage));
+        if (recaptchaMode === 'enterprise') {
+          if (projectId) parts.push('projectid=' + projectId);
+          if (siteKey) parts.push('sitekey=' + siteKey);
+        }
+
+        return parts.join(';');
+      }
+
+      function updateSnippet() {
+        var provider = document.getElementById('provider').value;
+        var recaptchaMode = document.getElementById('recaptcha-mode').value;
+        var expectedAction = document.getElementById('expectedaction').value.trim() || 'cij_form_submit';
+        var siteKey = document.getElementById('snippet-sitekey').value.trim() || 'YOUR_SITE_KEY';
+        var verifyEndpoint = document.getElementById('snippet-endpoint').value.trim() || 'https://YOUR_FUNCTION_HOST/api/captcha/verify';
+        var timeoutMs = Number(document.getElementById('snippet-timeout').value);
+        var safeTimeout = Number.isNaN(timeoutMs) || timeoutMs <= 0 ? 8000 : timeoutMs;
+        var preSubmitEnabled = document.getElementById('snippet-presubmit').value === 'true';
+        var debugEnabled = document.getElementById('snippet-debug').value === 'true';
+        var failureMessage = document.getElementById('snippet-failure').value.trim();
+
+        var lines = [];
+        lines.push('window.CijCaptcha.init({');
+        lines.push("  provider: '" + provider + "',");
+        lines.push("  siteKey: '" + siteKey + "',");
+
+        if (provider === 'recaptcha') {
+          lines.push("  action: '" + expectedAction + "',");
+          lines.push('  recaptcha: {');
+          lines.push("    mode: '" + recaptchaMode + "'");
+          lines.push('  },');
+        }
+
+        lines.push('  enableDebugLogs: ' + (debugEnabled ? 'true' : 'false') + ',');
+        lines.push('  preSubmit: {');
+        lines.push('    enabled: ' + (preSubmitEnabled ? 'true' : 'false') + ',');
+        lines.push("    verifyEndpoint: '" + verifyEndpoint + "',");
+        lines.push('    timeoutMs: ' + safeTimeout + ',');
+        if (failureMessage) {
+          lines.push("    failureMessage: '" + String(failureMessage).replace(/'/g, "\\'") + "'");
+        }
+        lines.push('  }');
+        lines.push('});');
+
+        document.getElementById('snippet-output').value = lines.join('\n');
       }
 
       function render() {
         var provider = document.getElementById('provider').value;
+        var recaptchaMode = document.getElementById('recaptcha-mode').value;
         var minScoreContainer = document.getElementById('minscore-container');
+        var recaptchaModeContainer = document.getElementById('recaptcha-mode-container');
+        var projectIdContainer = document.getElementById('projectid-container');
+        var siteKeyContainer = document.getElementById('sitekey-container');
+        var expectedActionContainer = document.getElementById('expectedaction-container');
+
         minScoreContainer.style.display = provider === 'recaptcha' ? 'flex' : 'none';
+        recaptchaModeContainer.style.display = provider === 'recaptcha' ? 'flex' : 'none';
+        expectedActionContainer.style.display = provider === 'recaptcha' ? 'flex' : 'none';
+        projectIdContainer.style.display = provider === 'recaptcha' && recaptchaMode === 'enterprise' ? 'flex' : 'none';
+        siteKeyContainer.style.display = provider === 'recaptcha' && recaptchaMode === 'enterprise' ? 'flex' : 'none';
+        updateSnippet();
       }
 
       function renderSecretVisibility() {
@@ -469,39 +656,29 @@
       }
 
       async function resolveStep(pluginTypeId, sdkMessageId) {
-        var filter =
-          '_eventhandler_value eq ' + normalizeGuid(pluginTypeId) +
-          ' and _sdkmessageid_value eq ' + normalizeGuid(sdkMessageId) +
-          ' and statecode eq 0';
+        var normalizedSdkMessageId = normalizeGuid(sdkMessageId);
+        var selectColumns = [
+          'sdkmessageprocessingstepid',
+          'configuration',
+          'stage',
+          'mode',
+          'statecode',
+          '_sdkmessageid_value',
+          '_sdkmessageprocessingstepsecureconfigid_value'
+        ];
 
         var steps = await queryAll(
           'sdkmessageprocessingstep',
-          [
-            'sdkmessageprocessingstepid',
-            'configuration',
-            'stage',
-            'mode',
-            'statecode',
-            '_eventhandler_value',
-            '_sdkmessageid_value',
-            '_sdkmessageprocessingstepsecureconfigid_value'
-          ],
-          filter
+          selectColumns,
+          '_sdkmessageid_value eq ' + normalizedSdkMessageId + ' and statecode eq 0',
+          1
         );
 
         if (!steps.length) {
-          throw new Error('No active sdkmessageprocessingstep found for plugin + message.');
+          throw new Error('No active sdkmessageprocessingstep found for message.');
         }
 
-        var preferred = null;
-        for (var i = 0; i < steps.length; i++) {
-          if (Number(steps[i].stage) === 40 && Number(steps[i].mode) === 0) {
-            preferred = steps[i];
-            break;
-          }
-        }
-
-        return preferred || steps[0];
+        return steps[0];
       }
 
       async function loadSecureConfig(secureConfigId) {
@@ -534,6 +711,12 @@
         var parsed = parseUnsecureConfig(step.configuration || '');
         document.getElementById('provider').value = parsed.provider;
         document.getElementById('minscore').value = String(parsed.minscore);
+        document.getElementById('recaptcha-mode').value = parsed.recaptchamode;
+        document.getElementById('projectid').value = parsed.projectid;
+        document.getElementById('sitekey').value = parsed.sitekey;
+        document.getElementById('expectedaction').value = parsed.expectedaction || 'cij_form_submit';
+        document.getElementById('failuremessage').value = parsed.failuremessage || '';
+        document.getElementById('snippet-sitekey').value = parsed.sitekey;
 
         var secureValue = '';
         if (state.secureConfigId) {
@@ -543,6 +726,7 @@
         debug('loaded secure config', { secureConfigLength: secureValue.length });
 
         render();
+        updateSnippet();
         renderSecretVisibility();
         setInputsLoaded(true);
         setStatus('Loaded current configuration.');
@@ -556,6 +740,15 @@
         var secret = document.getElementById('secret').value;
         if (!secret || !secret.trim()) {
           throw new Error('Secret key is required.');
+        }
+
+        var provider = document.getElementById('provider').value;
+        var recaptchaMode = document.getElementById('recaptcha-mode').value;
+        if (provider === 'recaptcha' && recaptchaMode === 'enterprise') {
+          var projectId = document.getElementById('projectid').value.trim();
+          if (!projectId) {
+            throw new Error('Enterprise project id is required when using reCAPTCHA Enterprise mode.');
+          }
         }
 
         var unsecureConfig = getUnsecureConfig();
@@ -632,6 +825,22 @@
 
         document.getElementById('provider').addEventListener('change', render);
         document.getElementById('minscore').addEventListener('input', render);
+        document.getElementById('recaptcha-mode').addEventListener('change', render);
+        document.getElementById('projectid').addEventListener('input', updateSnippet);
+        document.getElementById('sitekey').addEventListener('input', function (event) {
+          if (!document.getElementById('snippet-sitekey').value) {
+            document.getElementById('snippet-sitekey').value = event.target.value;
+          }
+          updateSnippet();
+        });
+        document.getElementById('failuremessage').addEventListener('input', render);
+        document.getElementById('expectedaction').addEventListener('input', updateSnippet);
+        document.getElementById('snippet-sitekey').addEventListener('input', updateSnippet);
+        document.getElementById('snippet-endpoint').addEventListener('input', updateSnippet);
+        document.getElementById('snippet-timeout').addEventListener('input', updateSnippet);
+        document.getElementById('snippet-presubmit').addEventListener('change', updateSnippet);
+        document.getElementById('snippet-debug').addEventListener('change', updateSnippet);
+        document.getElementById('snippet-failure').addEventListener('input', updateSnippet);
         document.getElementById('toggle-secret').addEventListener('click', onToggleSecret);
         document.getElementById('config-form').addEventListener('submit', onSave);
 

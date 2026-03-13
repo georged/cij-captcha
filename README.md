@@ -42,7 +42,11 @@ This release supports:
             if (!window.CijCaptcha?.init) return;
             window.CijCaptcha.init({
               provider: "recaptcha",
-              siteKey: "YOUR_RECAPTCHA_KEY"
+              siteKey: "YOUR_RECAPTCHA_KEY",
+              preSubmit: {
+                enabled: true,
+                verifyEndpoint: "https://your-verify-api.example.com/api/captcha/verify"
+              }
             });
           }
         </script>
@@ -122,12 +126,26 @@ Supported settings:
 - `action`: reCAPTCHA action (default `'cij_form_submit'`)
 - `enableDebugLogs`: `boolean` (default `false`)
 - `eagerLoad`: `boolean` (default `true`)
+- `preSubmit`:
+  - `enabled`: `boolean` (default `false`)
+  - `verifyEndpoint`: absolute URL to your verification endpoint (required when enabled)
+  - `timeoutMs`: request timeout in milliseconds (default `8000`)
+  - `failureMessage`: user-facing message when verification fails (default `'Captcha verification failed. Please try again.'`)
 - `turnstile`:
   - `size`: `'normal' | 'compact' | 'invisible'` (default `'normal'`)
   - `execution`: `'execute' | 'render'` (default `'execute'`)
   - `appearance`: `'always' | 'execute' | 'interaction-only'` (default `'execute'`)
   - `theme`: `'auto' | 'light' | 'dark'` (default `'auto'`)
   - `tokenReuseTimeout`: number in ms (default `240000`)
+
+### Strong model (recommended)
+
+Use both checks:
+
+1. Client pre-submit verification via `preSubmit` to fail early in the browser.
+2. Dataverse plugin validation as final server-side enforcement if JavaScript is bypassed.
+
+Pre-submit improves UX and reduces unnecessary submissions; plugin validation remains the security boundary.
 
 #### Multiple form support
 
@@ -157,6 +175,36 @@ If your page includes multiple CIJ Forms Each form, each form tag  still require
 
 
 ## Build your own version
+
+### Verify API (pre-submit endpoint)
+
+From repo root:
+
+```bash
+cd verify-api
+npm install
+cp .env.sample .env
+```
+
+Set `.env` values:
+
+- `RECAPTCHA_SECRET_KEY` for Google reCAPTCHA v3
+- `TURNSTILE_SECRET_KEY` for Cloudflare Turnstile
+- `RECAPTCHA_MIN_SCORE` optional, defaults to `0.5`
+- `CORS_ORIGINS` comma-separated origins that can call this API
+
+Run locally:
+
+```bash
+npm start
+```
+
+Endpoint:
+
+- `POST /api/captcha/verify`
+- Body: `{ "provider": "recaptcha" | "turnstile", "token": "...", "action": "cij_form_submit" }`
+- Success response: `{ "success": true, ... }`
+- Failure response: `{ "success": false, "reason": "..." }`
 
 ### Dataverse Plugin
 

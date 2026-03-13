@@ -27,6 +27,15 @@
  *   action: string                          // reCAPTCHA only; default 'cij_form_submit'
  *   enableDebugLogs: boolean                // default false
  *   eagerLoad: boolean                      // default true
+ *   recaptcha?: {
+ *     mode?: 'standard'|'enterprise'        // default 'standard'
+ *   }
+ *   preSubmit?: {
+ *     enabled?: boolean                     // default false
+ *     verifyEndpoint?: string               // required when enabled
+ *     timeoutMs?: number                    // default 8000
+ *     failureMessage?: string               // optional override for server validation failures
+ *   }
  *   turnstile?: {
  *     size?: 'normal'|'compact'|'invisible',               // default 'normal'
  *     execution?: 'execute'|'render',                      // default 'execute'
@@ -48,6 +57,15 @@
     action: 'cij_form_submit',
     enableDebugLogs: false,
     eagerLoad: true,
+    recaptcha: {
+      mode: 'standard'
+    },
+    preSubmit: {
+      enabled: false,
+      verifyEndpoint: '',
+      timeoutMs: 8000,
+      failureMessage: 'Captcha verification failed. Please try again.'
+    },
     turnstile: {
       size: 'normal',
       execution: 'execute',
@@ -62,6 +80,32 @@
       if (value === allowedValues[i]) return value;
     }
     return fallback;
+  }
+
+  function normalizeRecaptchaSettings(input, defaults) {
+    var source = input || {};
+
+    return {
+      mode: pickAllowed(source.mode, ['standard', 'enterprise'], defaults.mode)
+    };
+  }
+
+  function normalizePreSubmitSettings(input, defaults) {
+    var source = input || {};
+    var timeoutMs = defaults.timeoutMs;
+    if (typeof source.timeoutMs === 'number' && source.timeoutMs > 0) {
+      timeoutMs = source.timeoutMs;
+    }
+
+    return {
+      enabled: !!source.enabled,
+      verifyEndpoint: String(source.verifyEndpoint || '').trim(),
+      timeoutMs: timeoutMs,
+      failureMessage: typeof source.failureMessage === 'string'
+        ? String(source.failureMessage).trim()
+        : '',
+      fallbackFailureMessage: defaults.fallbackFailureMessage || defaults.failureMessage
+    };
   }
 
   function normalizeTurnstileSettings(input, defaults) {
@@ -92,6 +136,8 @@
       action: base.action,
       enableDebugLogs: base.enableDebugLogs,
       eagerLoad: base.eagerLoad,
+      recaptcha: normalizeRecaptchaSettings(null, base.recaptcha),
+      preSubmit: normalizePreSubmitSettings(null, base.preSubmit),
       turnstile: normalizeTurnstileSettings(null, base.turnstile)
     };
 
@@ -99,10 +145,12 @@
 
     for (var key in override) {
       if (!Object.prototype.hasOwnProperty.call(override, key)) continue;
-      if (key === 'turnstile') continue;
+      if (key === 'turnstile' || key === 'preSubmit' || key === 'recaptcha') continue;
       result[key] = override[key];
     }
 
+    result.recaptcha = normalizeRecaptchaSettings(override.recaptcha, result.recaptcha);
+    result.preSubmit = normalizePreSubmitSettings(override.preSubmit, result.preSubmit);
     result.turnstile = normalizeTurnstileSettings(override.turnstile, result.turnstile);
 
     return result;
@@ -132,12 +180,17 @@
     function loadRecaptchaScript() {
       if (state.loadPromise) return state.loadPromise;
       state.loadPromise = new Promise(function (resolve, reject) {
-        if (global.grecaptcha && global.grecaptcha.execute) {
+        if (global.grecaptcha &&
+          ((config.recaptcha.mode === 'enterprise' && global.grecaptcha.enterprise && global.grecaptcha.enterprise.execute) ||
+            (config.recaptcha.mode !== 'enterprise' && global.grecaptcha.execute))) {
           global.grecaptcha.ready(function () { resolve(); });
           return;
         }
         var s = document.createElement('script');
-        s.src = 'https://www.google.com/recaptcha/api.js?render=' + encodeURIComponent(config.siteKey);
+        var recaptchaBase = config.recaptcha.mode === 'enterprise'
+          ? 'https://www.google.com/recaptcha/enterprise.js?render='
+          : 'https://www.google.com/recaptcha/api.js?render=';
+        s.src = recaptchaBase + encodeURIComponent(config.siteKey);
         s.async = true;
         s.onload = function () { global.grecaptcha.ready(function () { resolve(); }); };
         s.onerror = function () {
@@ -151,6 +204,13 @@
 
     function getRecaptchaToken() {
       return loadRecaptchaScript().then(function () {
+        if (config.recaptcha.mode === 'enterprise') {
+          if (!global.grecaptcha || !global.grecaptcha.enterprise || !global.grecaptcha.enterprise.execute) {
+            throw new Error('[CIJ Captcha] reCAPTCHA Enterprise API is not available.');
+          }
+          return global.grecaptcha.enterprise.execute(config.siteKey, { action: config.action });
+        }
+
         return global.grecaptcha.execute(config.siteKey, { action: config.action });
       });
     }
@@ -241,12 +301,14 @@
       return entry;
     }
 
-    function getTurnstileToken(formEl) {
+    function getTurnstileToken(formEl, options) {
+      var forceFresh = !!(options && options.forceFresh);
       return loadTurnstileScript().then(function () {
         return new Promise(function (resolve, reject) {
           var entry = getOrCreateTurnstileWidget(formEl, resolve, reject);
 
           if (
+            !forceFresh &&
             config.turnstile.execution === 'render' &&
             entry.token &&
             entry.tokenAt &&
@@ -256,6 +318,8 @@
             return;
           }
 
+          entry.token = null;
+          entry.tokenAt = 0;
           global.turnstile.reset(entry.widgetId);
           if (config.turnstile.execution === 'execute') {
             global.turnstile.execute(entry.widgetId);
@@ -264,10 +328,103 @@
       });
     }
 
-    function getToken(formEl) {
+    function getToken(formEl, options) {
       return config.provider === 'turnstile'
-        ? getTurnstileToken(formEl)
+        ? getTurnstileToken(formEl, options)
         : getRecaptchaToken();
+    }
+
+    function getErrorElement(formEl) {
+      var errorEl = formEl.querySelector('[data-cij-captcha-error]');
+      if (errorEl) return errorEl;
+
+      errorEl = document.createElement('div');
+      errorEl.setAttribute('data-cij-captcha-error', 'true');
+      errorEl.style.color = '#b91c1c';
+      errorEl.style.fontSize = '14px';
+      errorEl.style.marginTop = '8px';
+      errorEl.style.display = 'none';
+      formEl.appendChild(errorEl);
+      return errorEl;
+    }
+
+    function setError(formEl, message) {
+      var errorEl = getErrorElement(formEl);
+      errorEl.textContent =
+        message ||
+        config.preSubmit.failureMessage ||
+        config.preSubmit.fallbackFailureMessage;
+      errorEl.style.display = 'block';
+    }
+
+    function clearError(formEl) {
+      var errorEl = formEl.querySelector('[data-cij-captcha-error]');
+      if (!errorEl) return;
+      errorEl.textContent = '';
+      errorEl.style.display = 'none';
+    }
+
+    function verifyPreSubmitToken(token) {
+      if (!config.preSubmit.enabled) return Promise.resolve();
+      if (!config.preSubmit.verifyEndpoint) {
+        return Promise.reject(new Error('[CIJ Captcha] preSubmit.verifyEndpoint is required when preSubmit.enabled=true.'));
+      }
+
+      var controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+      var timeoutId = null;
+      if (controller) {
+        timeoutId = setTimeout(function () {
+          controller.abort();
+        }, config.preSubmit.timeoutMs);
+      }
+
+      var payload = {
+        provider: config.provider,
+        token: token,
+        action: config.action,
+        siteKey: config.siteKey,
+        recaptchaMode: config.recaptcha.mode
+      };
+
+      var request = {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        },
+        body: JSON.stringify(payload)
+      };
+      if (controller) request.signal = controller.signal;
+
+      return fetch(config.preSubmit.verifyEndpoint, request)
+        .then(function (response) {
+          if (!response.ok) {
+            return response.json()
+              .catch(function () {
+                return null;
+              })
+              .then(function (json) {
+                var reason =
+                  config.preSubmit.failureMessage ||
+                  (json && json.reason ? String(json.reason) : '') ||
+                  '[CIJ Captcha] Pre-submit verification endpoint returned ' + response.status + '.';
+                throw new Error(reason);
+              });
+          }
+          return response.json();
+        })
+        .then(function (json) {
+          if (!json || (json.success !== true && json.valid !== true)) {
+            var reason =
+              config.preSubmit.failureMessage ||
+              (json && json.reason ? String(json.reason) : '') ||
+              config.preSubmit.fallbackFailureMessage;
+            throw new Error(reason);
+          }
+        })
+        .finally(function () {
+          if (timeoutId) clearTimeout(timeoutId);
+        });
     }
 
     function injectHiddenField(formEl) {
@@ -307,11 +464,30 @@
 
       if (formEl._cijCaptchaSubmitPending) return;
       formEl._cijCaptchaSubmitPending = true;
+      clearError(formEl);
+      captchaField.value = '';
 
       debug('Intercepted submit, obtaining token...');
       getToken(formEl)
         .then(function (token) {
-          captchaField.value = token;
+          if (!config.preSubmit.enabled) {
+            debug('Pre-submit verification disabled; using initial token for submission.');
+            return token;
+          }
+
+          debug('Pre-submit verification enabled; verifying token before submit.');
+          return verifyPreSubmitToken(token)
+            .then(function () {
+              debug('Pre-submit token verified; requesting fresh token for backend submission.');
+              // Provider verification tokens are single-use; submit a fresh token to backend.
+              return getToken(formEl, { forceFresh: true });
+            });
+        })
+        .then(function (submissionToken) {
+          debug('Submission token ready; proceeding with form submit.');
+          captchaField.value = submissionToken;
+        })
+        .then(function () {
           formEl._cijCaptchaSubmitPending = false;
           formEl._cijCaptchaResubmitting = true;
 
@@ -325,6 +501,12 @@
         .catch(function (err) {
           console.error('[CIJ Captcha] Could not obtain CAPTCHA token:', err);
           formEl._cijCaptchaSubmitPending = false;
+
+          if (config.preSubmit.enabled) {
+            setError(formEl, err && err.message ? err.message : null);
+            return;
+          }
+
           formEl._cijCaptchaResubmitting = true;
 
           if (formEl.requestSubmit) formEl.requestSubmit();
@@ -388,8 +570,11 @@
       if (config.provider !== 'turnstile' && config.provider !== 'recaptcha') {
         throw new Error('[CIJ Captcha] Invalid provider. Use "turnstile" or "recaptcha".');
       }
-      if(!config.siteKey) {
+      if (!config.siteKey) {
         throw new Error('[CIJ Captcha] siteKey is required.');
+      }
+      if (config.preSubmit.enabled && !config.preSubmit.verifyEndpoint) {
+        throw new Error('[CIJ Captcha] preSubmit.verifyEndpoint is required when preSubmit.enabled=true.');
       }
 
       var eagerLoad = config.provider === 'turnstile' ? loadTurnstileScript : loadRecaptchaScript;

@@ -14,6 +14,12 @@
                 provider: "recaptcha", 
                 siteKey: "YOUR_RECAPTCHA_SITE_KEY",
                 enableDebugLogs: true,
+                preSubmit: {
+                  enabled: true,
+                  verifyEndpoint: "http://localhost:8787/api/captcha/verify",
+                  timeoutMs: 8000,
+                  failureMessage: "Captcha verification failed. Please try again."
+                }
         });
         </script>
         <div

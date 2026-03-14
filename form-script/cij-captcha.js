@@ -96,8 +96,6 @@
     var timeout = defaults.timeout;
     if (typeof source.timeout === 'number' && source.timeout > 0) {
       timeout = source.timeout;
-    } else if (typeof source.timeoutMs === 'number' && source.timeoutMs > 0) {
-      timeout = source.timeoutMs;
     }
 
     return {

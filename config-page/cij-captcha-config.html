@@ -656,15 +656,16 @@
           lines.push('  },');
         }
 
-        lines.push('  enableDebugLogs: ' + (debugEnabled ? 'true' : 'false') + ',');
-        lines.push('  preSubmit: {');
-        lines.push('    enabled: ' + (preSubmitEnabled ? 'true' : 'false') + ',');
-        lines.push("    verifyEndpoint: '" + verifyEndpoint + "',");
-        lines.push('    timeout: ' + safeTimeout + ',');
-        if (failureMessage) {
-          lines.push("    failureMessage: '" + String(failureMessage).replace(/'/g, "\\'") + "'");
+        lines.push('  enableDebugLogs: ' + (debugEnabled ? 'true' : 'false') + (preSubmitEnabled ? ',' : ''));
+        if (preSubmitEnabled) {
+          lines.push('  preSubmit: {');
+          lines.push("    verifyEndpoint: '" + verifyEndpoint + "',");
+          lines.push('    timeout: ' + safeTimeout + (failureMessage ? ',' : ''));
+          if (failureMessage) {
+            lines.push("    failureMessage: '" + String(failureMessage).replace(/'/g, "\\'") + "'");
+          }
+          lines.push('  }');
         }
-        lines.push('  }');
         lines.push('});');
         lines.push('}');
         lines.push('<\\/script>');

@@ -25,7 +25,6 @@
  *   provider: 'recaptcha' | 'turnstile'     // default 'recaptcha'
  *   siteKey: string                         // site key (public), required
  *   action: string                          // reCAPTCHA only; default 'cij_form_submit'
- *   actionThresholds?: Record<string,number>// optional per-action thresholds for verify API
  *   enableDebugLogs: boolean                // default false
  *   eagerLoad: boolean                      // default true
  *   recaptcha?: {
@@ -408,10 +407,6 @@
         siteKey: config.siteKey,
         recaptchaMode: config.recaptcha.mode
       };
-
-      if (config.actionThresholds && typeof config.actionThresholds === 'object') {
-        payload.actionThresholds = config.actionThresholds;
-      }
 
       var request = {
         method: 'POST',

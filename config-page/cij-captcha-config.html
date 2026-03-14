@@ -647,13 +647,6 @@
           lines.push('  recaptcha: {');
           lines.push("    mode: '" + recaptchaMode + "'");
           lines.push('  },');
-          lines.push('  actionThresholds: {');
-          for (var i = 0; i < normalizedPairs.length; i++) {
-            var pair = normalizedPairs[i];
-            var comma = i === normalizedPairs.length - 1 ? '' : ',';
-            lines.push("    '" + pair.action + "': " + pair.threshold + comma);
-          }
-          lines.push('  },');
         }
 
         lines.push('  enableDebugLogs: ' + (debugEnabled ? 'true' : 'false') + (preSubmitEnabled ? ',' : ''));
@@ -668,8 +661,8 @@
         }
         lines.push('});');
         lines.push('}');
-        lines.push('<\\/script>');
-        lines.push('<script src="https://cdn.jsdelivr.net/gh/georged/cij-captcha/form-script/cij-captcha.js" onload="initCijCaptcha()"><\\/script>');
+        lines.push('</script>');
+        lines.push('<script src="https://cdn.jsdelivr.net/gh/georged/cij-captcha/form-script/cij-captcha.js" onload="initCijCaptcha()"></script>');
 
         document.getElementById('snippet-output').value = lines.join('\n');
       }

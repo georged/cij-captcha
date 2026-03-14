@@ -191,10 +191,6 @@ export function App() {
   }, [provider, recaptchaMode, actionThresholdsSerialized, pluginFailureMessage, projectId, enterpriseSiteKey]);
 
   const generatedSnippet = useMemo(() => {
-    const actionThresholdObject = normalizedActionThresholdPairs
-      .map((pair) => `    '${pair.action}': ${pair.threshold}`)
-      .join(',\n');
-
     const lines: string[] = [];
     lines.push('<script>');
     lines.push('function initCijCaptcha() {');
@@ -207,25 +203,17 @@ export function App() {
       lines.push('  recaptcha: {');
       lines.push(`    mode: '${recaptchaMode}'`);
       lines.push('  },');
-      lines.push('  actionThresholds: {');
-      lines.push(actionThresholdObject);
-      lines.push('  },');
     }
 
-    lines.push(`  enableDebugLogs: ${snippetDebugEnabled ? 'true' : 'false'},`);
+    lines.push(`  enableDebugLogs: ${snippetDebugEnabled ? 'true' : 'false'}${snippetPreSubmitEnabled ? ',' : ''}`);
     if (snippetPreSubmitEnabled) {
       const safeTimeout = Math.max(1, Number(snippetTimeout) || 8000);
       lines.push('  preSubmit: {');
-      lines.push('    enabled: true,');
       lines.push(`    verifyEndpoint: '${snippetVerifyEndpoint || 'https://YOUR_FUNCTION_HOST/api/captcha/verify'}',`);
-      lines.push(`    timeout: ${safeTimeout},`);
+      lines.push(`    timeout: ${safeTimeout}${snippetFailureMessage.trim() ? ',' : ''}`);
       if (snippetFailureMessage.trim()) {
         lines.push(`    failureMessage: '${snippetFailureMessage.trim().replace(/'/g, "\\'")}'`);
       }
-      lines.push('  }');
-    } else {
-      lines.push('  preSubmit: {');
-      lines.push('    enabled: false');
       lines.push('  }');
     }
 

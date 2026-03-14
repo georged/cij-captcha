@@ -247,6 +247,7 @@
       var container = document.createElement('div');
       var captchaBlock = document.createElement('div');
       captchaBlock.className = 'submitButtonWrapper';
+      captchaBlock.setAttribute('data-cij-captcha-turnstile', 'true');
       captchaBlock.appendChild(container);
 
       var submitWrapper = formEl.querySelector('div.submitButtonWrapper');
@@ -300,6 +301,26 @@
       return entry;
     }
 
+    function placeErrorElement(formEl, errorEl) {
+      var turnstileBlock = formEl.querySelector('[data-cij-captcha-turnstile="true"]');
+      var submitWrappers = formEl.querySelectorAll('div.submitButtonWrapper');
+      var submitWrapper = null;
+
+      for (var i = 0; i < submitWrappers.length; i++) {
+        if (submitWrappers[i] !== turnstileBlock) {
+          submitWrapper = submitWrappers[i];
+          break;
+        }
+      }
+
+      if (submitWrapper && submitWrapper.parentNode) {
+        submitWrapper.parentNode.insertBefore(errorEl, submitWrapper);
+        return;
+      }
+
+      formEl.appendChild(errorEl);
+    }
+
     function getTurnstileToken(formEl, options) {
       var forceFresh = !!(options && options.forceFresh);
       return loadTurnstileScript().then(function () {
@@ -335,7 +356,10 @@
 
     function getErrorElement(formEl) {
       var errorEl = formEl.querySelector('[data-cij-captcha-error]');
-      if (errorEl) return errorEl;
+      if (errorEl) {
+        placeErrorElement(formEl, errorEl);
+        return errorEl;
+      }
 
       errorEl = document.createElement('div');
       errorEl.setAttribute('data-cij-captcha-error', 'true');
@@ -343,7 +367,7 @@
       errorEl.style.fontSize = '14px';
       errorEl.style.marginTop = '8px';
       errorEl.style.display = 'none';
-      formEl.appendChild(errorEl);
+      placeErrorElement(formEl, errorEl);
       return errorEl;
     }
 

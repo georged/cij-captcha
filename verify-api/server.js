@@ -15,6 +15,62 @@ function parseScore(value, fallback) {
   return Math.max(0, Math.min(1, parsed));
 }
 
+function parseActionThresholds(raw, fallbackAction = 'cij_form_submit', fallbackThreshold = 0.5) {
+  const result = {};
+
+  if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+    for (const [actionName, threshold] of Object.entries(raw)) {
+      const action = String(actionName || '').trim();
+      if (!action) continue;
+      result[action] = parseScore(threshold, fallbackThreshold);
+    }
+  } else {
+    const text = String(raw || '').trim();
+    if (text) {
+      for (const pair of text.split(',')) {
+        const [actionName, threshold] = String(pair).split(':');
+        const action = String(actionName || '').trim();
+        if (!action) continue;
+        result[action] = parseScore(threshold, fallbackThreshold);
+      }
+    }
+  }
+
+  if (Object.keys(result).length === 0) {
+    result[String(fallbackAction || 'cij_form_submit').trim() || 'cij_form_submit'] = parseScore(fallbackThreshold, 0.5);
+  }
+
+  return result;
+}
+
+function resolveThresholdForAction({ action, actionThresholds, fallbackThreshold }) {
+  const normalizedAction = String(action || '').trim();
+  if (!normalizedAction) {
+    return {
+      ok: false,
+      reason: 'reCAPTCHA action is missing.',
+      threshold: null,
+      action: normalizedAction
+    };
+  }
+
+  if (!Object.prototype.hasOwnProperty.call(actionThresholds, normalizedAction)) {
+    return {
+      ok: false,
+      reason: `Action '${normalizedAction}' is not configured in action thresholds.`,
+      threshold: null,
+      action: normalizedAction
+    };
+  }
+
+  return {
+    ok: true,
+    reason: null,
+    threshold: parseScore(actionThresholds[normalizedAction], fallbackThreshold),
+    action: normalizedAction
+  };
+}
+
 function validateRequestBody(body) {
   if (!body || typeof body !== 'object') {
     return 'Request body must be a JSON object.';
@@ -57,9 +113,12 @@ async function verifyRecaptchaStandard({ token, action, remoteip, env, fetchImpl
   }
 
   const result = await response.json();
-  const expectedAction = String(env.RECAPTCHA_EXPECTED_ACTION || '').trim();
-  const submittedAction = String(action || '').trim();
   const minScore = parseScore(env.RECAPTCHA_MIN_SCORE, 0.5);
+  const actionThresholds = parseActionThresholds(
+    env.RECAPTCHA_ACTION_THRESHOLDS,
+    String(env.RECAPTCHA_EXPECTED_ACTION || 'cij_form_submit').trim() || 'cij_form_submit',
+    minScore
+  );
 
   if (!asBool(result.success)) {
     return {
@@ -71,10 +130,16 @@ async function verifyRecaptchaStandard({ token, action, remoteip, env, fetchImpl
     };
   }
 
-  if (expectedAction && submittedAction && result.action && result.action !== submittedAction) {
+  const thresholdResult = resolveThresholdForAction({
+    action: result.action || action,
+    actionThresholds,
+    fallbackThreshold: minScore
+  });
+
+  if (!thresholdResult.ok) {
     return {
       success: false,
-      reason: 'reCAPTCHA action mismatch.',
+      reason: thresholdResult.reason,
       provider: 'recaptcha',
       score: typeof result.score === 'number' ? result.score : null,
       errors: result['error-codes'] || []
@@ -82,10 +147,10 @@ async function verifyRecaptchaStandard({ token, action, remoteip, env, fetchImpl
   }
 
   const score = typeof result.score === 'number' ? result.score : null;
-  if (score !== null && score < minScore) {
+  if (score !== null && score < thresholdResult.threshold) {
     return {
       success: false,
-      reason: `reCAPTCHA score ${score} is below minimum ${minScore}.`,
+      reason: `reCAPTCHA score ${score} is below threshold ${thresholdResult.threshold} for action '${thresholdResult.action}'.`,
       provider: 'recaptcha',
       score,
       errors: result['error-codes'] || []
@@ -104,10 +169,14 @@ async function verifyRecaptchaStandard({ token, action, remoteip, env, fetchImpl
 async function verifyRecaptchaEnterprise({ token, action, siteKey, remoteip, env, fetchImpl }) {
   const apiKey = String(env.RECAPTCHA_ENTERPRISE_API_KEY || '').trim();
   const projectId = String(env.RECAPTCHA_ENTERPRISE_PROJECT_ID || '').trim();
-  const expectedAction = String(env.RECAPTCHA_EXPECTED_ACTION || '').trim();
   const minScore = parseScore(env.RECAPTCHA_MIN_SCORE, 0.5);
+  const actionThresholds = parseActionThresholds(
+    env.RECAPTCHA_ACTION_THRESHOLDS,
+    String(env.RECAPTCHA_EXPECTED_ACTION || 'cij_form_submit').trim() || 'cij_form_submit',
+    minScore
+  );
   const effectiveSiteKey = String(siteKey || env.RECAPTCHA_SITE_KEY || '').trim();
-  const effectiveAction = String(action || expectedAction).trim();
+  const effectiveAction = String(action || '').trim();
 
   if (!apiKey) {
     throw new Error('RECAPTCHA_ENTERPRISE_API_KEY is not configured.');
@@ -160,10 +229,16 @@ async function verifyRecaptchaEnterprise({ token, action, siteKey, remoteip, env
     };
   }
 
-  if (effectiveAction && receivedAction && receivedAction !== effectiveAction) {
+  const thresholdResult = resolveThresholdForAction({
+    action: receivedAction || effectiveAction,
+    actionThresholds,
+    fallbackThreshold: minScore
+  });
+
+  if (!thresholdResult.ok) {
     return {
       success: false,
-      reason: 'reCAPTCHA Enterprise action mismatch.',
+      reason: thresholdResult.reason,
       provider: 'recaptcha',
       mode: 'enterprise',
       score,
@@ -171,10 +246,10 @@ async function verifyRecaptchaEnterprise({ token, action, siteKey, remoteip, env
     };
   }
 
-  if (score !== null && score < minScore) {
+  if (score !== null && score < thresholdResult.threshold) {
     return {
       success: false,
-      reason: `reCAPTCHA score ${score} is below minimum ${minScore}.`,
+      reason: `reCAPTCHA score ${score} is below threshold ${thresholdResult.threshold} for action '${thresholdResult.action}'.`,
       provider: 'recaptcha',
       mode: 'enterprise',
       score,
@@ -302,10 +377,18 @@ function createVerifier(options = {}) {
     const token = String(body.token || '').trim();
     const action = String(body.action || '').trim();
     const siteKey = String(body.siteKey || '').trim();
+    const actionThresholds = body.actionThresholds || body.actionthresholds || null;
+
+    // Allow request-scoped overrides so pre-submit and server validation can share the same thresholds.
+    const requestEnv = {
+      ...env,
+      RECAPTCHA_ACTION_THRESHOLDS:
+        actionThresholds == null ? env.RECAPTCHA_ACTION_THRESHOLDS : actionThresholds
+    };
 
     return provider === 'recaptcha'
-      ? verifyRecaptcha({ token, action, siteKey, remoteip, env, fetchImpl })
-      : verifyTurnstile({ token, remoteip, env, fetchImpl });
+      ? verifyRecaptcha({ token, action, siteKey, remoteip, env: requestEnv, fetchImpl })
+      : verifyTurnstile({ token, remoteip, env: requestEnv, fetchImpl });
   };
 }
 

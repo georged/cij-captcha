@@ -22,9 +22,15 @@ Request body:
 {
   "provider": "recaptcha",
   "token": "TOKEN_FROM_CLIENT",
-  "action": "cij_form_submit"
+  "action": "cij_form_submit",
+  "actionThresholds": {
+    "cij_form_submit": 0.5,
+    "newsletter_signup": 0.8
+  }
 }
 ```
+
+`actionThresholds` is optional and can override server defaults per request.
 
 Response:
 
@@ -41,4 +47,5 @@ Response:
 - `PORT` default `8787`
 - `CORS_ORIGINS` comma-separated allowlist. Empty means allow all origins.
 - `RECAPTCHA_MIN_SCORE` default `0.5`
-- `RECAPTCHA_EXPECTED_ACTION` optional action check
+- `RECAPTCHA_ACTION_THRESHOLDS` action-threshold pairs (for example: `cij_form_submit:0.5,newsletter_signup:0.8`)
+- `RECAPTCHA_EXPECTED_ACTION` legacy fallback action (used when `RECAPTCHA_ACTION_THRESHOLDS` is not provided)

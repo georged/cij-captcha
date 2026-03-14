@@ -74,6 +74,8 @@ This release supports:
 Instead of the solution configuration page, administrators can use **Plugin Registration Tool** and configure **secureConfig** and **unsecureConfig** values:
 
 - reCAPTCHA unsecure config: `provider=recaptcha;minscore=0.7`
+- reCAPTCHA unsecure config (legacy): `provider=recaptcha;minscore=0.7`
+- reCAPTCHA unsecure config (recommended): `provider=recaptcha;actionthresholds=cij_form_submit:0.5,newsletter_signup:0.8`
 - Turnstile unsecure config: `provider=turnstile`
 - Secure config: provider secret key
 
@@ -191,6 +193,7 @@ Set `.env` values:
 - `RECAPTCHA_SECRET_KEY` for Google reCAPTCHA v3
 - `TURNSTILE_SECRET_KEY` for Cloudflare Turnstile
 - `RECAPTCHA_MIN_SCORE` optional, defaults to `0.5`
+- `RECAPTCHA_ACTION_THRESHOLDS` optional action-score pairs, e.g. `cij_form_submit:0.5,newsletter_signup:0.8`
 - `CORS_ORIGINS` comma-separated origins that can call this API
 
 Run locally:
@@ -202,7 +205,7 @@ npm start
 Endpoint:
 
 - `POST /api/captcha/verify`
-- Body: `{ "provider": "recaptcha" | "turnstile", "token": "...", "action": "cij_form_submit" }`
+- Body: `{ "provider": "recaptcha" | "turnstile", "token": "...", "action": "cij_form_submit", "actionThresholds": { "cij_form_submit": 0.5 } }`
 - Success response: `{ "success": true, ... }`
 - Failure response: `{ "success": false, "reason": "..." }`
 
@@ -236,7 +239,8 @@ Register with Plugin Registration Tool:
 2. Register `CijCaptcha.dll` as a new assembly (Sandbox).
 3. Register step for message `msdynmkt_validateformsubmission` (Synchronous, Post-operation).
 4. Set step configuration:
-   - Unsecure: `provider=recaptcha;minscore=0.7` or `provider=turnstile`
+  - Unsecure: `provider=recaptcha;actionthresholds=cij_form_submit:0.5` (recommended) or `provider=recaptcha;minscore=0.7` (legacy)
+  - Unsecure for Turnstile: `provider=turnstile`
    - Secure: CAPTCHA secret key
 
 > [!IMPORTANT]

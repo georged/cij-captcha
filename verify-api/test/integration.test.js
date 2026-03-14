@@ -57,7 +57,7 @@ test('standard recaptcha success', async () => {
       RECAPTCHA_MODE: 'standard',
       RECAPTCHA_SECRET_KEY: 'test-secret',
       RECAPTCHA_MIN_SCORE: '0.5',
-      RECAPTCHA_EXPECTED_ACTION: 'cij-form-submit'
+      RECAPTCHA_ACTION_THRESHOLDS: 'cij-form-submit:0.5,newsletter_signup:0.8'
     },
     fetchImpl: createMockFetch(async (url) => {
       assert.match(String(url), /google\.com\/recaptcha\/api\/siteverify/);
@@ -79,14 +79,14 @@ test('standard recaptcha success', async () => {
   });
 });
 
-test('enterprise recaptcha action mismatch fails', async () => {
+test('enterprise recaptcha unconfigured action fails', async () => {
   await withServer({
     env: {
       CORS_ORIGINS: 'http://localhost:8000',
       RECAPTCHA_MODE: 'enterprise',
       RECAPTCHA_ENTERPRISE_API_KEY: 'api-key',
       RECAPTCHA_ENTERPRISE_PROJECT_ID: 'proj-1',
-      RECAPTCHA_EXPECTED_ACTION: 'cij-form-submit',
+      RECAPTCHA_ACTION_THRESHOLDS: 'cij-form-submit:0.5',
       RECAPTCHA_MIN_SCORE: '0.5'
     },
     fetchImpl: createMockFetch(async (url) => {
@@ -115,7 +115,35 @@ test('enterprise recaptcha action mismatch fails', async () => {
     assert.equal(result.status, 200);
     assert.equal(result.json.success, false);
     assert.equal(result.json.mode, 'enterprise');
-    assert.match(String(result.json.reason), /action mismatch/i);
+    assert.match(String(result.json.reason), /not configured/i);
+  });
+});
+
+test('request actionThresholds override enforces threshold by action', async () => {
+  await withServer({
+    env: {
+      CORS_ORIGINS: 'http://localhost:8000',
+      RECAPTCHA_MODE: 'standard',
+      RECAPTCHA_SECRET_KEY: 'test-secret',
+      RECAPTCHA_MIN_SCORE: '0.1'
+    },
+    fetchImpl: createMockFetch(async () => ({
+      ok: true,
+      json: async () => ({ success: true, score: 0.6, action: 'checkout' })
+    }))
+  }, async (baseUrl) => {
+    const result = await postJson(baseUrl, {
+      provider: 'recaptcha',
+      token: 'token-4',
+      action: 'checkout',
+      actionThresholds: {
+        checkout: 0.7
+      }
+    });
+
+    assert.equal(result.status, 200);
+    assert.equal(result.json.success, false);
+    assert.match(String(result.json.reason), /below threshold 0.7/i);
   });
 });
 

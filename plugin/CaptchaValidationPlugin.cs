@@ -7,6 +7,7 @@ using System.Runtime.Serialization;
 using System.Runtime.Serialization.Json;
 using System.Text;
 using System.Text.Json.Serialization;
+using System.Globalization;
 using Microsoft.Xrm.Sdk;
 
 namespace Georged.Cij.Captcha
@@ -79,6 +80,7 @@ namespace Georged.Cij.Captcha
         private readonly string          _recaptchaProjectId;
         private readonly string          _recaptchaSiteKey;
         private readonly string          _recaptchaExpectedAction;
+        private readonly Dictionary<string, double> _actionThresholds;
         private readonly string          _validationFailureMessage;
 
         /// <summary>
@@ -112,6 +114,7 @@ namespace Georged.Cij.Captcha
             _recaptchaProjectId = ParseConfigValue(unsecureConfig, "projectid");
             _recaptchaSiteKey = ParseConfigValue(unsecureConfig, "sitekey");
             _recaptchaExpectedAction = ParseConfigValue(unsecureConfig, "expectedaction");
+            _actionThresholds = ParseActionThresholds(unsecureConfig, _recaptchaExpectedAction, _minScore);
             _validationFailureMessage = ParseConfigValue(unsecureConfig, "failuremessage");
 
             var secureValues = ParseSecureConfigValues(secureConfig);
@@ -215,18 +218,23 @@ namespace Georged.Cij.Captcha
         /// </summary>
         private bool VerifyRecaptchaEnterprise(string token, ITracingService tracingService)
         {
-            var expectedAction = string.IsNullOrWhiteSpace(_recaptchaExpectedAction)
-                ? "cij_form_submit"
-                : _recaptchaExpectedAction;
+            var expectedAction = _actionThresholds.Count == 1
+                ? _actionThresholds.Keys.FirstOrDefault()
+                : null;
 
             var endpoint =
                 RecaptchaEnterpriseAssessmentsBaseUrl + "/" + Uri.EscapeDataString(_recaptchaProjectId) +
                 "/assessments?key=" + Uri.EscapeDataString(_enterpriseApiKey);
 
-            var payload =
-                "{\"event\":{\"token\":\"" + EscapeJson(token) +
-                "\",\"siteKey\":\"" + EscapeJson(_recaptchaSiteKey) +
-                "\",\"expectedAction\":\"" + EscapeJson(expectedAction) + "\"}}";
+            var payload = "{\"event\":{\"token\":\"" + EscapeJson(token) +
+                "\",\"siteKey\":\"" + EscapeJson(_recaptchaSiteKey) + "\"";
+
+            if (!string.IsNullOrWhiteSpace(expectedAction))
+            {
+                payload += ",\"expectedAction\":\"" + EscapeJson(expectedAction) + "\"";
+            }
+
+            payload += "}}";
 
             var raw = PostJsonToVerifyEndpoint(endpoint, payload, tracingService);
             if (raw == null) return false;
@@ -250,18 +258,16 @@ namespace Georged.Cij.Captcha
                 return false;
             }
 
-            if (!string.IsNullOrWhiteSpace(expectedAction) &&
-                !string.IsNullOrWhiteSpace(action) &&
-                !string.Equals(action, expectedAction, StringComparison.Ordinal))
+            if (!TryGetRequiredThresholdForAction(action, out var requiredThreshold, out var reason))
             {
-                tracingService.Trace("[CijCaptcha] Enterprise action mismatch.");
+                tracingService.Trace("[CijCaptcha] Enterprise action check failed: " + reason);
                 return false;
             }
 
-            if (score < _minScore)
+            if (score < requiredThreshold)
             {
                 tracingService.Trace(
-                    "[CijCaptcha] Enterprise score " + score + " below threshold " + _minScore + ".");
+                    "[CijCaptcha] Enterprise score " + score + " below threshold " + requiredThreshold + ".");
                 return false;
             }
 
@@ -271,7 +277,7 @@ namespace Georged.Cij.Captcha
         // ── Provider verification ──────────────────────────────────────────────
 
         /// <summary>
-        /// Verifies a Google reCAPTCHA v3 token and enforces the score threshold.
+        /// Verifies a Google reCAPTCHA v3 token and enforces action + score checks.
         /// </summary>
         private bool VerifyRecaptcha(string token, ITracingService tracingService)
         {
@@ -286,6 +292,12 @@ namespace Georged.Cij.Captcha
 
             var response = Deserialize<RecaptchaVerifyResponse>(raw);
 
+            if (response == null)
+            {
+                tracingService.Trace("[CijCaptcha] reCAPTCHA response was empty or invalid JSON.");
+                return false;
+            }
+
             tracingService.Trace(
                 $"[CijCaptcha] reCAPTCHA: success={response.success}, " +
                 $"score={response.score}, action={response.action}");
@@ -298,13 +310,62 @@ namespace Georged.Cij.Captcha
                 return false;
             }
 
-            if (response.score < _minScore)
+            if (!TryGetRequiredThresholdForAction(response.action, out var requiredThreshold, out var reason))
             {
-                tracingService.Trace(
-                    $"[CijCaptcha] reCAPTCHA score {response.score} below threshold {_minScore}.");
+                tracingService.Trace("[CijCaptcha] reCAPTCHA action check failed: " + reason);
                 return false;
             }
 
+            if (response.score < requiredThreshold)
+            {
+                tracingService.Trace(
+                    $"[CijCaptcha] reCAPTCHA score {response.score} below threshold {requiredThreshold}.");
+                return false;
+            }
+
+            return true;
+        }
+
+        private bool TryGetRequiredThresholdForAction(string action, out double threshold, out string reason)
+        {
+            threshold = 0.5;
+            reason = null;
+
+            if (_actionThresholds != null && _actionThresholds.Count > 0)
+            {
+                if (string.IsNullOrWhiteSpace(action))
+                {
+                    reason = "action is missing from provider response.";
+                    return false;
+                }
+
+                var normalized = action.Trim();
+                if (!_actionThresholds.TryGetValue(normalized, out threshold))
+                {
+                    reason = "action '" + normalized + "' is not configured.";
+                    return false;
+                }
+
+                return true;
+            }
+
+            var expectedAction = string.IsNullOrWhiteSpace(_recaptchaExpectedAction)
+                ? "cij_form_submit"
+                : _recaptchaExpectedAction;
+
+            if (string.IsNullOrWhiteSpace(action))
+            {
+                reason = "action is missing from provider response.";
+                return false;
+            }
+
+            if (!string.Equals(action, expectedAction, StringComparison.Ordinal))
+            {
+                reason = "action mismatch. Received '" + action + "', expected '" + expectedAction + "'.";
+                return false;
+            }
+
+            threshold = _minScore;
             return true;
         }
 
@@ -527,6 +588,44 @@ namespace Georged.Cij.Captcha
             }
 
             return 0.5;
+        }
+
+        private static Dictionary<string, double> ParseActionThresholds(
+            string config,
+            string fallbackAction,
+            double fallbackThreshold)
+        {
+            var thresholds = new Dictionary<string, double>(StringComparer.Ordinal);
+            var raw = ParseConfigValue(config, "actionthresholds");
+
+            if (!string.IsNullOrWhiteSpace(raw))
+            {
+                foreach (var entry in raw.Split(','))
+                {
+                    var pair = entry.Split(':');
+                    if (pair.Length < 2) continue;
+
+                    var action = pair[0].Trim();
+                    var thresholdRaw = pair[1].Trim();
+                    if (string.IsNullOrWhiteSpace(action)) continue;
+
+                    if (double.TryParse(thresholdRaw, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed))
+                    {
+                        thresholds[action] = Math.Max(0.0, Math.Min(1.0, parsed));
+                    }
+                }
+            }
+
+            if (thresholds.Count == 0)
+            {
+                var action = string.IsNullOrWhiteSpace(fallbackAction)
+                    ? "cij_form_submit"
+                    : fallbackAction;
+
+                thresholds[action] = Math.Max(0.0, Math.Min(1.0, fallbackThreshold));
+            }
+
+            return thresholds;
         }
 
         // ── JSON helpers (DataContractJsonSerializer — no extra dependencies) ──

@@ -177,7 +177,64 @@ body {
   gap: 14px;
 }
 
+.config-tabs {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 14px;
+  padding: 6px;
+  border-radius: 12px;
+  border: 1px solid var(--field-border);
+  background: var(--field);
+}
+
+.config-tab {
+  border: 1px solid transparent;
+  border-radius: 10px;
+  padding: 9px 14px;
+  background: transparent;
+  color: var(--text);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.config-tab.active {
+  border-color: var(--field-border);
+  background: var(--status);
+}
+
+.secret-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.secret-row input {
+  flex: 1;
+  min-width: 0;
+}
+
+.secret-toggle {
+  border: 1px solid var(--field-border);
+  border-radius: 10px;
+  padding: 8px 12px;
+  background: var(--field);
+  color: var(--text);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
 label {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+fieldset {
+  border: 1px solid var(--field-border);
+  border-radius: 12px;
+  margin: 0;
+  padding: 10px 12px;
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -205,6 +262,44 @@ textarea {
 
 .wide {
   grid-column: 1 / -1;
+}
+
+.choice-row {
+  display: flex;
+  gap: 12px;
+}
+
+.choice-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.choice-item input,
+.inline-checkbox input {
+  width: auto;
+}
+
+.inline-checkbox {
+  display: inline-flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: flex-start;
+  align-self: flex-start;
+  gap: 8px;
+  padding-top: 0;
+}
+
+.action-thresholds {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.action-threshold-row {
+  display: grid;
+  grid-template-columns: 1fr 120px auto;
+  gap: 8px;
 }
 
 .footer {
@@ -246,8 +341,20 @@ textarea {
     grid-template-columns: 1fr;
   }
 
+  .config-tabs {
+    width: 100%;
+  }
+
+  .config-tab {
+    flex: 1;
+  }
+
   .footer {
     flex-direction: column;
     align-items: stretch;
+  }
+
+  .action-threshold-row {
+    grid-template-columns: 1fr;
   }
 }

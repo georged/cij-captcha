@@ -52,6 +52,39 @@
       display: grid;
     }
 
+    .tabs {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px;
+      border: 1px solid #d1d5db;
+      border-radius: 8px;
+      background: #f9fafb;
+    }
+
+    .tab-btn {
+      border: 1px solid transparent;
+      background: transparent;
+      color: #111827;
+      border-radius: 6px;
+      padding: 8px 12px;
+    }
+
+    .tab-btn.active {
+      border-color: #9ca3af;
+      background: #ffffff;
+    }
+
+    .tab-panel {
+      display: none;
+      grid-template-columns: 1fr;
+      gap: 14px;
+    }
+
+    .tab-panel.active {
+      display: grid;
+    }
+
     .loading-panel {
       display: none;
       align-items: center;
@@ -135,6 +168,47 @@
       color: #111827;
     }
 
+    .choice-row {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    .choice-item {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 14px;
+      color: #111827;
+    }
+
+    .choice-item input,
+    .inline-checkbox input {
+      width: auto;
+    }
+
+    .inline-checkbox {
+      display: inline-flex;
+      flex-direction: row;
+      align-items: center;
+      justify-content: flex-start;
+      align-self: flex-start;
+      gap: 8px;
+    }
+
+    .action-thresholds {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .action-threshold-row {
+      display: grid;
+      grid-template-columns: 1fr 120px auto;
+      gap: 8px;
+      align-items: center;
+    }
+
     .actions {
       margin-top: 16px;
       display: flex;
@@ -155,6 +229,19 @@
     button:disabled {
       cursor: not-allowed;
       opacity: 0.7;
+    }
+
+    .tabs .tab-btn {
+      border: 1px solid transparent;
+      background: transparent;
+      color: #111827;
+      border-radius: 6px;
+      padding: 8px 12px;
+    }
+
+    .tabs .tab-btn.active {
+      border-color: #9ca3af;
+      background: #ffffff;
     }
 
     .status {
@@ -182,101 +269,114 @@
       </div>
 
       <div id="settings-fields" class="settings-fields">
-        <label for="provider">
-          Provider
-          <select id="provider" name="provider">
-            <option value="recaptcha">Google reCAPTCHA v3</option>
-            <option value="turnstile">Cloudflare Turnstile</option>
-          </select>
-        </label>
+        <div class="tabs" role="tablist" aria-label="Configuration sections">
+          <button id="tab-plugin" class="tab-btn active" type="button" role="tab" aria-selected="true">Plugin Settings</button>
+          <button id="tab-snippet" class="tab-btn" type="button" role="tab" aria-selected="false">JavaScript Snippet</button>
+        </div>
 
-        <label id="minscore-container" for="minscore">
-          Minimum score
-          <input id="minscore" name="minscore" type="number" min="0" max="1" step="0.1" value="0.5" />
-        </label>
+        <div id="plugin-panel" class="tab-panel active" role="tabpanel" aria-label="Plugin Settings">
+          <label for="provider">
+            Provider
+            <select id="provider" name="provider">
+              <option value="recaptcha">Google reCAPTCHA v3</option>
+              <option value="turnstile">Cloudflare Turnstile</option>
+            </select>
+          </label>
 
-        <label id="recaptcha-mode-container" for="recaptcha-mode">
-          reCAPTCHA mode
-          <select id="recaptcha-mode" name="recaptcha-mode">
-            <option value="standard">Standard</option>
-            <option value="enterprise">Enterprise</option>
-          </select>
-        </label>
+          <label id="recaptcha-mode-container">
+            reCAPTCHA mode
+            <div class="choice-row" id="recaptcha-mode">
+              <label class="choice-item">
+                <input type="radio" name="recaptcha-mode" value="standard" checked />
+                <span>Standard</span>
+              </label>
+              <label class="choice-item">
+                <input type="radio" name="recaptcha-mode" value="enterprise" />
+                <span>Enterprise</span>
+              </label>
+            </div>
+          </label>
 
-        <label id="projectid-container" for="projectid">
-          Enterprise project id
-          <input id="projectid" name="projectid" type="text" placeholder="my-gcp-project-id" />
-        </label>
+          <label id="projectid-container" for="projectid">
+            Enterprise project id
+            <input id="projectid" name="projectid" type="text" placeholder="my-gcp-project-id" />
+          </label>
 
-        <label id="sitekey-container" for="sitekey">
-          Enterprise site key
-          <input id="sitekey" name="sitekey" type="text" placeholder="6Lxxxxxxxxxxxxxxxx" />
-        </label>
+          <label id="sitekey-container" for="sitekey">
+            Enterprise site key
+            <div class="secret-row">
+              <input id="sitekey" name="sitekey" type="password" placeholder="6Lxxxxxxxxxxxxxxxx" />
+              <button id="toggle-sitekey" class="secret-toggle" type="button" aria-pressed="false">Show</button>
+            </div>
+          </label>
 
-        <label id="expectedaction-container" for="expectedaction">
-          Expected action
-          <input id="expectedaction" name="expectedaction" type="text" value="cij_form_submit" />
-        </label>
-
-        <label for="failuremessage">
-          Plugin validation failure message
-          <input id="failuremessage" name="failuremessage" type="text" placeholder="Captcha test failed." />
-        </label>
-
-        <label for="secret">
-          Secret key
-          <div class="secret-row">
-            <input id="secret" name="secret" type="password" placeholder="Enter provider secret key" />
-            <button id="toggle-secret" class="secret-toggle" type="button" aria-pressed="false">Show</button>
+          <div id="actionthresholds-container" class="action-thresholds">
+            <span>Action thresholds</span>
+            <div id="action-thresholds-list"></div>
+            <button id="add-action-threshold" class="secret-toggle" type="button">Add action threshold</button>
           </div>
-        </label>
+
+          <label for="failuremessage">
+            Plugin validation failure message
+            <input id="failuremessage" name="failuremessage" type="text" placeholder="Captcha test failed." />
+          </label>
+
+          <label for="secret">
+            Secret key
+            <div class="secret-row">
+              <input id="secret" name="secret" type="password" placeholder="Enter provider secret key" />
+              <button id="toggle-secret" class="secret-toggle" type="button" aria-pressed="false">Show</button>
+            </div>
+          </label>
+        </div>
+
+        <div id="snippet-panel" class="tab-panel" role="tabpanel" aria-label="JavaScript Snippet">
+          <label for="snippet-sitekey">
+            Site key
+            <input id="snippet-sitekey" type="text" placeholder="YOUR_SITE_KEY" />
+          </label>
+
+          <label for="snippet-endpoint">
+            Verify endpoint
+            <input id="snippet-endpoint" type="text" placeholder="https://YOUR_FUNCTION_HOST/api/captcha/verify" />
+          </label>
+
+          <label for="snippet-timeout">
+            Timeout (ms)
+            <input id="snippet-timeout" type="number" min="1000" step="500" value="8000" />
+          </label>
+
+          <label for="snippet-action">
+            Action
+            <input id="snippet-action" type="text" value="cij_form_submit" />
+          </label>
+
+          <label class="inline-checkbox" for="snippet-presubmit">
+            <input id="snippet-presubmit" type="checkbox" checked />
+            <span>Pre-submit enabled</span>
+          </label>
+
+          <label class="inline-checkbox" for="snippet-debug">
+            <input id="snippet-debug" type="checkbox" />
+            <span>Debug logging</span>
+          </label>
+
+          <label for="snippet-failure">
+            Validation failure message override
+            <input id="snippet-failure" type="text" placeholder="Leave blank to use the server-returned message" />
+          </label>
+
+          <label for="snippet-output">
+            Ready-to-paste init snippet
+            <textarea id="snippet-output" rows="14" readonly></textarea>
+          </label>
+        </div>
       </div>
 
       <div class="actions">
         <button id="save-btn" type="submit">Save Configuration</button>
         <div id="status" class="status">Loading configuration...</div>
       </div>
-
-      <label for="snippet-sitekey">
-        Snippet site key
-        <input id="snippet-sitekey" type="text" placeholder="YOUR_SITE_KEY" />
-      </label>
-
-      <label for="snippet-endpoint">
-        Snippet verify endpoint
-        <input id="snippet-endpoint" type="text" placeholder="https://YOUR_FUNCTION_HOST/api/captcha/verify" />
-      </label>
-
-      <label for="snippet-timeout">
-        Snippet timeout (ms)
-        <input id="snippet-timeout" type="number" min="1000" step="500" value="8000" />
-      </label>
-
-      <label for="snippet-presubmit">
-        Snippet pre-submit enabled
-        <select id="snippet-presubmit">
-          <option value="true">true</option>
-          <option value="false">false</option>
-        </select>
-      </label>
-
-      <label for="snippet-debug">
-        Snippet debug logging
-        <select id="snippet-debug">
-          <option value="false">false</option>
-          <option value="true">true</option>
-        </select>
-      </label>
-
-      <label for="snippet-failure">
-        Snippet validation failure message override
-        <input id="snippet-failure" type="text" placeholder="Leave blank to use the server-returned message" />
-      </label>
-
-      <label for="snippet-output">
-        Ready-to-paste init snippet
-        <textarea id="snippet-output" rows="14" readonly></textarea>
-      </label>
     </form>
 
     <div class="hint">Don't forget to add form hosting domain (e.g. `assets-usa.mkt.dynamics.com`) to the list of approved domains for your captcha keys.</div>
@@ -295,13 +395,14 @@
         secureConfigId: '',
         isSaving: false,
         isSecretVisible: false,
+        isEnterpriseSiteKeyVisible: false,
+        actionThresholdPairs: [{ action: 'cij_form_submit', threshold: '0.5' }],
+        activeTab: 'plugin',
         isLoaded: false
       };
 
-      function debug() {
-        var args = Array.prototype.slice.call(arguments);
-        args.unshift('[CIJ Config WebResource]');
-        console.debug.apply(console, args);
+      function debug(...args) {
+        console.debug('[CIJ Config WebResource]', ...args);
       }
 
       function normalizeGuid(value) {
@@ -316,17 +417,104 @@
         return Math.max(0, Math.min(1.0, value));
       }
 
+      function getRecaptchaMode() {
+        var checked = document.querySelector('input[name="recaptcha-mode"]:checked');
+        return checked ? checked.value : 'standard';
+      }
+
+      function setRecaptchaMode(mode) {
+        var target = mode === 'enterprise' ? 'enterprise' : 'standard';
+        var input = document.querySelector('input[name="recaptcha-mode"][value="' + target + '"]');
+        if (input) input.checked = true;
+      }
+
+      function normalizeActionThresholdPairs(pairs) {
+        var normalized = [];
+        for (var i = 0; i < pairs.length; i++) {
+          var action = String((pairs[i] && pairs[i].action) || '').trim();
+          var threshold = clamp(Number((pairs[i] && pairs[i].threshold) || 0.5));
+          if (!action) continue;
+          normalized.push({ action: action, threshold: String(threshold) });
+        }
+
+        if (!normalized.length) {
+          normalized.push({ action: 'cij_form_submit', threshold: '0.5' });
+        }
+
+        return normalized;
+      }
+
+      function renderActionThresholdRows() {
+
+        var list = document.getElementById('action-thresholds-list');
+        list.innerHTML = '';
+
+        if (!Array.isArray(state.actionThresholdPairs) || !state.actionThresholdPairs.length) {
+          state.actionThresholdPairs = [{ action: 'cij_form_submit', threshold: '0.5' }];
+        }
+
+        for (var i = 0; i < state.actionThresholdPairs.length; i++) {
+          (function (index) {
+            var row = document.createElement('div');
+            row.className = 'action-threshold-row';
+
+            var actionInput = document.createElement('input');
+            actionInput.type = 'text';
+            actionInput.placeholder = 'action name';
+            actionInput.value = state.actionThresholdPairs[index].action;
+            actionInput.addEventListener('input', function () {
+              state.actionThresholdPairs[index].action = actionInput.value;
+              updateSnippet();
+            });
+
+            var thresholdInput = document.createElement('input');
+            thresholdInput.type = 'number';
+            thresholdInput.min = '0';
+            thresholdInput.max = '1';
+            thresholdInput.step = '0.1';
+            thresholdInput.value = state.actionThresholdPairs[index].threshold;
+            thresholdInput.addEventListener('input', function () {
+              state.actionThresholdPairs[index].threshold = thresholdInput.value;
+              updateSnippet();
+            });
+
+            var removeButton = document.createElement('button');
+            removeButton.type = 'button';
+            removeButton.className = 'secret-toggle';
+            removeButton.textContent = 'Remove';
+            removeButton.addEventListener('click', function () {
+              if (state.actionThresholdPairs.length === 1) return;
+              state.actionThresholdPairs.splice(index, 1);
+              renderActionThresholdRows();
+              updateSnippet();
+            });
+
+            row.appendChild(actionInput);
+            row.appendChild(thresholdInput);
+            row.appendChild(removeButton);
+            list.appendChild(row);
+          })(i);
+        }
+
+        if (!document.getElementById('snippet-action').value && state.actionThresholdPairs.length) {
+          document.getElementById('snippet-action').value = state.actionThresholdPairs[0].action;
+        }
+      }
+
       function parseUnsecureConfig(config) {
         var result = {
           provider: 'recaptcha',
-          minscore: 0.5,
           recaptchamode: 'standard',
           projectid: '',
           sitekey: '',
-          expectedaction: 'cij_form_submit',
+          actionthresholds: [{ action: 'cij_form_submit', threshold: '0.5' }],
           failuremessage: ''
         };
         if (!config) return result;
+
+        var hasActionThresholds = false;
+        var legacyExpectedAction = 'cij_form_submit';
+        var legacyMinScore = 0.5;
 
         function decodeConfigValue(value) {
           try {
@@ -348,13 +536,6 @@
             result.provider = value;
           }
 
-          if (key === 'minscore') {
-            var parsed = Number(value);
-            if (!Number.isNaN(parsed)) {
-              result.minscore = clamp(parsed);
-            }
-          }
-
           if (key === 'recaptchamode' && (value === 'standard' || value === 'enterprise')) {
             result.recaptchamode = value;
           }
@@ -367,13 +548,41 @@
             result.sitekey = pair.slice(1).join('=').trim();
           }
 
+          if (key === 'actionthresholds') {
+            var pairs = decodeConfigValue(pair.slice(1).join('=').trim()).split(',');
+            var parsedPairs = [];
+            for (var p = 0; p < pairs.length; p++) {
+              var split = pairs[p].split(':');
+              var action = String(split[0] || '').trim();
+              var threshold = clamp(Number(String(split[1] || '').trim()) || 0.5);
+              if (!action) continue;
+              parsedPairs.push({ action: action, threshold: String(threshold) });
+            }
+
+            if (parsedPairs.length) {
+              result.actionthresholds = parsedPairs;
+              hasActionThresholds = true;
+            }
+          }
+
           if (key === 'expectedaction') {
-            result.expectedaction = decodeConfigValue(pair.slice(1).join('=').trim());
+            legacyExpectedAction = decodeConfigValue(pair.slice(1).join('=').trim()) || 'cij_form_submit';
+          }
+
+          if (key === 'minscore') {
+            var parsed = Number(value);
+            if (!Number.isNaN(parsed)) {
+              legacyMinScore = clamp(parsed);
+            }
           }
 
           if (key === 'failuremessage') {
             result.failuremessage = decodeConfigValue(pair.slice(1).join('=').trim());
           }
+        }
+
+        if (!hasActionThresholds) {
+          result.actionthresholds = [{ action: legacyExpectedAction, threshold: String(legacyMinScore) }];
         }
 
         return result;
@@ -390,21 +599,20 @@
           return turnstileParts.join(';');
         }
 
-        var recaptchaMode = document.getElementById('recaptcha-mode').value;
+        var recaptchaMode = getRecaptchaMode();
         var projectId = document.getElementById('projectid').value.trim();
         var siteKey = document.getElementById('sitekey').value.trim();
-        var expectedAction = document.getElementById('expectedaction').value.trim();
+        var normalizedPairs = normalizeActionThresholdPairs(state.actionThresholdPairs);
         var failureMessage = document.getElementById('failuremessage').value.trim();
-        var minScoreRaw = Number(document.getElementById('minscore').value);
-        var minScore = Number.isNaN(minScoreRaw) ? 0.5 : clamp(minScoreRaw);
 
         var parts = [
           'provider=recaptcha',
           'recaptchamode=' + recaptchaMode,
-          'minscore=' + minScore
+          'actionthresholds=' + normalizedPairs.map(function (pair) {
+            return pair.action + ':' + pair.threshold;
+          }).join(',')
         ];
 
-        if (expectedAction) parts.push('expectedaction=' + expectedAction);
         if (failureMessage) parts.push('failuremessage=' + encodeURIComponent(failureMessage));
         if (recaptchaMode === 'enterprise') {
           if (projectId) parts.push('projectid=' + projectId);
@@ -416,25 +624,35 @@
 
       function updateSnippet() {
         var provider = document.getElementById('provider').value;
-        var recaptchaMode = document.getElementById('recaptcha-mode').value;
-        var expectedAction = document.getElementById('expectedaction').value.trim() || 'cij_form_submit';
+        var recaptchaMode = getRecaptchaMode();
+        var snippetAction = document.getElementById('snippet-action').value.trim() || 'cij_form_submit';
+        var normalizedPairs = normalizeActionThresholdPairs(state.actionThresholdPairs);
         var siteKey = document.getElementById('snippet-sitekey').value.trim() || 'YOUR_SITE_KEY';
         var verifyEndpoint = document.getElementById('snippet-endpoint').value.trim() || 'https://YOUR_FUNCTION_HOST/api/captcha/verify';
         var timeoutMs = Number(document.getElementById('snippet-timeout').value);
         var safeTimeout = Number.isNaN(timeoutMs) || timeoutMs <= 0 ? 8000 : timeoutMs;
-        var preSubmitEnabled = document.getElementById('snippet-presubmit').value === 'true';
-        var debugEnabled = document.getElementById('snippet-debug').value === 'true';
+        var preSubmitEnabled = document.getElementById('snippet-presubmit').checked;
+        var debugEnabled = document.getElementById('snippet-debug').checked;
         var failureMessage = document.getElementById('snippet-failure').value.trim();
 
         var lines = [];
+        lines.push('<script>');
+        lines.push('function initCijCaptcha() {');
         lines.push('window.CijCaptcha.init({');
         lines.push("  provider: '" + provider + "',");
         lines.push("  siteKey: '" + siteKey + "',");
 
         if (provider === 'recaptcha') {
-          lines.push("  action: '" + expectedAction + "',");
+          lines.push("  action: '" + snippetAction + "',");
           lines.push('  recaptcha: {');
           lines.push("    mode: '" + recaptchaMode + "'");
+          lines.push('  },');
+          lines.push('  actionThresholds: {');
+          for (var i = 0; i < normalizedPairs.length; i++) {
+            var pair = normalizedPairs[i];
+            var comma = i === normalizedPairs.length - 1 ? '' : ',';
+            lines.push("    '" + pair.action + "': " + pair.threshold + comma);
+          }
           lines.push('  },');
         }
 
@@ -448,25 +666,46 @@
         }
         lines.push('  }');
         lines.push('});');
+        lines.push('}');
+        lines.push('<\\/script>');
+        lines.push('<script src="https://cdn.jsdelivr.net/gh/georged/cij-captcha/form-script/cij-captcha.js" onload="initCijCaptcha()"><\\/script>');
 
         document.getElementById('snippet-output').value = lines.join('\n');
       }
 
       function render() {
         var provider = document.getElementById('provider').value;
-        var recaptchaMode = document.getElementById('recaptcha-mode').value;
-        var minScoreContainer = document.getElementById('minscore-container');
+        var recaptchaMode = getRecaptchaMode();
         var recaptchaModeContainer = document.getElementById('recaptcha-mode-container');
         var projectIdContainer = document.getElementById('projectid-container');
         var siteKeyContainer = document.getElementById('sitekey-container');
-        var expectedActionContainer = document.getElementById('expectedaction-container');
+        var actionThresholdsContainer = document.getElementById('actionthresholds-container');
 
-        minScoreContainer.style.display = provider === 'recaptcha' ? 'flex' : 'none';
         recaptchaModeContainer.style.display = provider === 'recaptcha' ? 'flex' : 'none';
-        expectedActionContainer.style.display = provider === 'recaptcha' ? 'flex' : 'none';
+        actionThresholdsContainer.style.display = provider === 'recaptcha' ? 'flex' : 'none';
         projectIdContainer.style.display = provider === 'recaptcha' && recaptchaMode === 'enterprise' ? 'flex' : 'none';
         siteKeyContainer.style.display = provider === 'recaptcha' && recaptchaMode === 'enterprise' ? 'flex' : 'none';
         updateSnippet();
+      }
+
+      function renderTabs() {
+        var pluginTab = document.getElementById('tab-plugin');
+        var snippetTab = document.getElementById('tab-snippet');
+        var pluginPanel = document.getElementById('plugin-panel');
+        var snippetPanel = document.getElementById('snippet-panel');
+
+        var isPluginTab = state.activeTab === 'plugin';
+        pluginTab.classList.toggle('active', isPluginTab);
+        snippetTab.classList.toggle('active', !isPluginTab);
+        pluginTab.setAttribute('aria-selected', isPluginTab ? 'true' : 'false');
+        snippetTab.setAttribute('aria-selected', isPluginTab ? 'false' : 'true');
+        pluginPanel.classList.toggle('active', isPluginTab);
+        snippetPanel.classList.toggle('active', !isPluginTab);
+      }
+
+      function setActiveTab(tab) {
+        state.activeTab = tab === 'snippet' ? 'snippet' : 'plugin';
+        renderTabs();
       }
 
       function renderSecretVisibility() {
@@ -481,6 +720,20 @@
       function onToggleSecret() {
         state.isSecretVisible = !state.isSecretVisible;
         renderSecretVisibility();
+      }
+
+      function renderEnterpriseSiteKeyVisibility() {
+        var siteKeyInput = document.getElementById('sitekey');
+        var toggleButton = document.getElementById('toggle-sitekey');
+
+        siteKeyInput.type = state.isEnterpriseSiteKeyVisible ? 'text' : 'password';
+        toggleButton.textContent = state.isEnterpriseSiteKeyVisible ? 'Hide' : 'Show';
+        toggleButton.setAttribute('aria-pressed', state.isEnterpriseSiteKeyVisible ? 'true' : 'false');
+      }
+
+      function onToggleEnterpriseSiteKey() {
+        state.isEnterpriseSiteKeyVisible = !state.isEnterpriseSiteKeyVisible;
+        renderEnterpriseSiteKeyVisibility();
       }
 
       function setStatus(message) {
@@ -656,26 +909,32 @@
       }
 
       async function resolveStep(pluginTypeId, sdkMessageId) {
+        var normalizedPluginTypeId = normalizeGuid(pluginTypeId);
         var normalizedSdkMessageId = normalizeGuid(sdkMessageId);
         var selectColumns = [
           'sdkmessageprocessingstepid',
           'configuration',
-          'stage',
-          'mode',
           'statecode',
           '_sdkmessageid_value',
+          '_eventhandler_value',
           '_sdkmessageprocessingstepsecureconfigid_value'
         ];
 
         var steps = await queryAll(
           'sdkmessageprocessingstep',
           selectColumns,
-          '_sdkmessageid_value eq ' + normalizedSdkMessageId + ' and statecode eq 0',
-          1
+          '_eventhandler_value eq ' + normalizedPluginTypeId +
+          ' and _sdkmessageid_value eq ' + normalizedSdkMessageId +
+          ' and statecode eq 0',
+          2
         );
 
         if (!steps.length) {
-          throw new Error('No active sdkmessageprocessingstep found for message.');
+          throw new Error('No active sdkmessageprocessingstep found for the selected plugin and message.');
+        }
+
+        if (steps.length > 1) {
+          throw new Error('Multiple active sdkmessageprocessingstep records were found for this plugin and message. Expected exactly one.');
         }
 
         return steps[0];
@@ -710,11 +969,12 @@
 
         var parsed = parseUnsecureConfig(step.configuration || '');
         document.getElementById('provider').value = parsed.provider;
-        document.getElementById('minscore').value = String(parsed.minscore);
-        document.getElementById('recaptcha-mode').value = parsed.recaptchamode;
+        setRecaptchaMode(parsed.recaptchamode);
         document.getElementById('projectid').value = parsed.projectid;
         document.getElementById('sitekey').value = parsed.sitekey;
-        document.getElementById('expectedaction').value = parsed.expectedaction || 'cij_form_submit';
+        state.actionThresholdPairs = parsed.actionthresholds;
+        renderActionThresholdRows();
+        document.getElementById('snippet-action').value = parsed.actionthresholds[0].action || 'cij_form_submit';
         document.getElementById('failuremessage').value = parsed.failuremessage || '';
         document.getElementById('snippet-sitekey').value = parsed.sitekey;
 
@@ -727,7 +987,9 @@
 
         render();
         updateSnippet();
+        renderTabs();
         renderSecretVisibility();
+        renderEnterpriseSiteKeyVisibility();
         setInputsLoaded(true);
         setStatus('Loaded current configuration.');
       }
@@ -743,7 +1005,7 @@
         }
 
         var provider = document.getElementById('provider').value;
-        var recaptchaMode = document.getElementById('recaptcha-mode').value;
+        var recaptchaMode = getRecaptchaMode();
         if (provider === 'recaptcha' && recaptchaMode === 'enterprise') {
           var projectId = document.getElementById('projectid').value.trim();
           if (!projectId) {
@@ -824,8 +1086,10 @@
         });
 
         document.getElementById('provider').addEventListener('change', render);
-        document.getElementById('minscore').addEventListener('input', render);
-        document.getElementById('recaptcha-mode').addEventListener('change', render);
+        var recaptchaModeInputs = document.querySelectorAll('input[name="recaptcha-mode"]');
+        recaptchaModeInputs.forEach(function (input) {
+          input.addEventListener('change', render);
+        });
         document.getElementById('projectid').addEventListener('input', updateSnippet);
         document.getElementById('sitekey').addEventListener('input', function (event) {
           if (!document.getElementById('snippet-sitekey').value) {
@@ -833,19 +1097,30 @@
           }
           updateSnippet();
         });
+        document.getElementById('add-action-threshold').addEventListener('click', function () {
+          state.actionThresholdPairs.push({ action: '', threshold: '0.5' });
+          renderActionThresholdRows();
+          updateSnippet();
+        });
         document.getElementById('failuremessage').addEventListener('input', render);
-        document.getElementById('expectedaction').addEventListener('input', updateSnippet);
+        document.getElementById('snippet-action').addEventListener('input', updateSnippet);
         document.getElementById('snippet-sitekey').addEventListener('input', updateSnippet);
         document.getElementById('snippet-endpoint').addEventListener('input', updateSnippet);
         document.getElementById('snippet-timeout').addEventListener('input', updateSnippet);
-        document.getElementById('snippet-presubmit').addEventListener('change', updateSnippet);
-        document.getElementById('snippet-debug').addEventListener('change', updateSnippet);
+        document.getElementById('snippet-presubmit').addEventListener('input', updateSnippet);
+        document.getElementById('snippet-debug').addEventListener('input', updateSnippet);
         document.getElementById('snippet-failure').addEventListener('input', updateSnippet);
+        document.getElementById('tab-plugin').addEventListener('click', function () { setActiveTab('plugin'); });
+        document.getElementById('tab-snippet').addEventListener('click', function () { setActiveTab('snippet'); });
         document.getElementById('toggle-secret').addEventListener('click', onToggleSecret);
+        document.getElementById('toggle-sitekey').addEventListener('click', onToggleEnterpriseSiteKey);
         document.getElementById('config-form').addEventListener('submit', onSave);
 
         setInputsLoaded(false);
+        renderActionThresholdRows();
+        renderTabs();
         renderSecretVisibility();
+        renderEnterpriseSiteKeyVisibility();
 
         try {
           await loadConfiguration();

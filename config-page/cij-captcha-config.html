@@ -629,8 +629,8 @@
         var normalizedPairs = normalizeActionThresholdPairs(state.actionThresholdPairs);
         var siteKey = document.getElementById('snippet-sitekey').value.trim() || 'YOUR_SITE_KEY';
         var verifyEndpoint = document.getElementById('snippet-endpoint').value.trim() || 'https://YOUR_FUNCTION_HOST/api/captcha/verify';
-        var timeoutMs = Number(document.getElementById('snippet-timeout').value);
-        var safeTimeout = Number.isNaN(timeoutMs) || timeoutMs <= 0 ? 8000 : timeoutMs;
+        var timeout = Number(document.getElementById('snippet-timeout').value);
+        var safeTimeout = Number.isNaN(timeout) || timeout <= 0 ? 8000 : timeout;
         var preSubmitEnabled = document.getElementById('snippet-presubmit').checked;
         var debugEnabled = document.getElementById('snippet-debug').checked;
         var failureMessage = document.getElementById('snippet-failure').value.trim();
@@ -660,7 +660,7 @@
         lines.push('  preSubmit: {');
         lines.push('    enabled: ' + (preSubmitEnabled ? 'true' : 'false') + ',');
         lines.push("    verifyEndpoint: '" + verifyEndpoint + "',");
-        lines.push('    timeoutMs: ' + safeTimeout + ',');
+        lines.push('    timeout: ' + safeTimeout + ',');
         if (failureMessage) {
           lines.push("    failureMessage: '" + String(failureMessage).replace(/'/g, "\\'") + "'");
         }

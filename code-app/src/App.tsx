@@ -136,7 +136,7 @@ export function App() {
   const [secret, setSecret] = useState('');
   const [snippetSiteKey, setSnippetSiteKey] = useState('');
   const [snippetVerifyEndpoint, setSnippetVerifyEndpoint] = useState('');
-  const [snippetTimeoutMs, setSnippetTimeoutMs] = useState('8000');
+  const [snippetTimeout, setSnippetTimeout] = useState('8000');
   const [snippetFailureMessage, setSnippetFailureMessage] = useState('');
   const [snippetPreSubmitEnabled, setSnippetPreSubmitEnabled] = useState(true);
   const [snippetDebugEnabled, setSnippetDebugEnabled] = useState(false);
@@ -214,11 +214,11 @@ export function App() {
 
     lines.push(`  enableDebugLogs: ${snippetDebugEnabled ? 'true' : 'false'},`);
     if (snippetPreSubmitEnabled) {
-      const safeTimeout = Math.max(1, Number(snippetTimeoutMs) || 8000);
+      const safeTimeout = Math.max(1, Number(snippetTimeout) || 8000);
       lines.push('  preSubmit: {');
       lines.push('    enabled: true,');
       lines.push(`    verifyEndpoint: '${snippetVerifyEndpoint || 'https://YOUR_FUNCTION_HOST/api/captcha/verify'}',`);
-      lines.push(`    timeoutMs: ${safeTimeout},`);
+      lines.push(`    timeout: ${safeTimeout},`);
       if (snippetFailureMessage.trim()) {
         lines.push(`    failureMessage: '${snippetFailureMessage.trim().replace(/'/g, "\\'")}'`);
       }
@@ -242,7 +242,7 @@ export function App() {
     snippetDebugEnabled,
     snippetPreSubmitEnabled,
     snippetVerifyEndpoint,
-    snippetTimeoutMs,
+    snippetTimeout,
     snippetFailureMessage
   ]);
 
@@ -608,8 +608,8 @@ export function App() {
                 type="number"
                 min={1000}
                 step={500}
-                value={snippetTimeoutMs}
-                onChange={(e) => setSnippetTimeoutMs(e.target.value)}
+                value={snippetTimeout}
+                onChange={(e) => setSnippetTimeout(e.target.value)}
               />
             </label>
 

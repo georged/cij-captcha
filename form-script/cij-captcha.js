@@ -34,7 +34,7 @@
  *   preSubmit?: {
  *     enabled?: boolean                     // default false
  *     verifyEndpoint?: string               // required when enabled
- *     timeoutMs?: number                    // default 8000
+ *     timeout?: number                      // default 8000
  *     failureMessage?: string               // optional override for server validation failures
  *   }
  *   turnstile?: {
@@ -64,7 +64,7 @@
     preSubmit: {
       enabled: false,
       verifyEndpoint: '',
-      timeoutMs: 8000,
+      timeout: 8000,
       failureMessage: 'Captcha verification failed. Please try again.'
     },
     turnstile: {
@@ -93,15 +93,17 @@
 
   function normalizePreSubmitSettings(input, defaults) {
     var source = input || {};
-    var timeoutMs = defaults.timeoutMs;
-    if (typeof source.timeoutMs === 'number' && source.timeoutMs > 0) {
-      timeoutMs = source.timeoutMs;
+    var timeout = defaults.timeout;
+    if (typeof source.timeout === 'number' && source.timeout > 0) {
+      timeout = source.timeout;
+    } else if (typeof source.timeoutMs === 'number' && source.timeoutMs > 0) {
+      timeout = source.timeoutMs;
     }
 
     return {
       enabled: !!source.enabled,
       verifyEndpoint: String(source.verifyEndpoint || '').trim(),
-      timeoutMs: timeoutMs,
+      timeout: timeout,
       failureMessage: typeof source.failureMessage === 'string'
         ? String(source.failureMessage).trim()
         : '',
@@ -398,7 +400,7 @@
       if (controller) {
         timeoutId = setTimeout(function () {
           controller.abort();
-        }, config.preSubmit.timeoutMs);
+        }, config.preSubmit.timeout);
       }
 
       var payload = {

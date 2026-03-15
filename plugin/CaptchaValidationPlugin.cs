@@ -52,8 +52,8 @@ namespace Georged.Cij.Captcha
     ///     provider=recaptcha;minscore=0.7  — reCAPTCHA v3 with custom score threshold
     ///     provider=turnstile            — use Cloudflare Turnstile
     ///
-    ///   Secure Config  (stored encrypted by Dataverse — put secret key here):
-    ///     &lt;your CAPTCHA secret key&gt;
+    ///   Secure Config  (stored encrypted by Dataverse):
+    ///     secret=&lt;captcha secret key&gt;;apikey=&lt;enterprise api key&gt;;projectid=&lt;gcp project id&gt;;sitekey=&lt;enterprise site key&gt;
     ///
     /// The plugin will throw an InvalidPluginExecutionException on startup if
     /// the secure config (secret key) is missing, to fail fast rather than
@@ -97,8 +97,8 @@ namespace Georged.Cij.Captcha
         ///   or "provider=turnstile".
         /// </param>
         /// <param name="secureConfig">
-        ///   The CAPTCHA secret key. Stored encrypted by Dataverse.
-        ///   This is the ONLY place the secret key should exist.
+        ///   Sensitive provider values stored encrypted by Dataverse.
+        ///   Supports secret/apikey/projectid/sitekey key-value pairs.
         /// </param>
         public CaptchaValidationPlugin(string unsecureConfig, string secureConfig)
         {
@@ -111,8 +111,6 @@ namespace Georged.Cij.Captcha
             _provider = ParseProvider(unsecureConfig);
             _minScore = ParseMinScore(unsecureConfig);
             _recaptchaMode = ParseRecaptchaMode(unsecureConfig);
-            _recaptchaProjectId = ParseConfigValue(unsecureConfig, "projectid");
-            _recaptchaSiteKey = ParseConfigValue(unsecureConfig, "sitekey");
             _recaptchaExpectedAction = ParseConfigValue(unsecureConfig, "expectedaction");
             _actionThresholds = ParseActionThresholds(unsecureConfig, _recaptchaExpectedAction, _minScore);
             _validationFailureMessage = ParseConfigValue(unsecureConfig, "failuremessage");
@@ -120,6 +118,8 @@ namespace Georged.Cij.Captcha
             var secureValues = ParseSecureConfigValues(secureConfig);
             _secretKey = secureValues.secretKey;
             _enterpriseApiKey = secureValues.enterpriseApiKey;
+            _recaptchaProjectId = secureValues.recaptchaProjectId;
+            _recaptchaSiteKey = secureValues.recaptchaSiteKey;
 
             if (_provider == CaptchaProvider.GoogleRecaptchaV3 && _recaptchaMode == RecaptchaMode.Enterprise)
             {
@@ -130,13 +130,13 @@ namespace Georged.Cij.Captcha
 
                 if (string.IsNullOrWhiteSpace(_recaptchaProjectId))
                     throw new InvalidPluginExecutionException(
-                        "[CijCaptcha] Missing Enterprise project id in unsecure config. " +
-                        "Set 'projectid=<gcp-project-id>'.");
+                        "[CijCaptcha] Missing Enterprise project id in secure config. " +
+                        "Set secure config with 'projectid=<gcp-project-id>'.");
 
                 if (string.IsNullOrWhiteSpace(_recaptchaSiteKey))
                     throw new InvalidPluginExecutionException(
-                        "[CijCaptcha] Missing Enterprise site key in unsecure config. " +
-                        "Set 'sitekey=<enterprise-site-key>'.");
+                        "[CijCaptcha] Missing Enterprise site key in secure config. " +
+                        "Set secure config with 'sitekey=<enterprise-site-key>'.");
             }
             else
             {
@@ -540,16 +540,18 @@ namespace Georged.Cij.Captcha
             }
         }
 
-        private static (string secretKey, string enterpriseApiKey) ParseSecureConfigValues(string secureConfig)
+        private static (string secretKey, string enterpriseApiKey, string recaptchaProjectId, string recaptchaSiteKey) ParseSecureConfigValues(string secureConfig)
         {
             var raw = (secureConfig ?? string.Empty).Trim();
             if (!raw.Contains("="))
             {
-                return (raw, raw);
+                return (raw, raw, null, null);
             }
 
             string secret = null;
             string apiKey = null;
+            string projectId = null;
+            string siteKey = null;
 
             foreach (var part in raw.Split(';'))
             {
@@ -560,9 +562,11 @@ namespace Georged.Cij.Captcha
                 var value = string.Join("=", kv.Skip(1)).Trim();
                 if (key == "secret" || key == "secretkey") secret = value;
                 if (key == "apikey" || key == "enterpriseapikey") apiKey = value;
+                if (key == "projectid" || key == "recaptchaprojectid") projectId = value;
+                if (key == "sitekey" || key == "recaptchasitekey" || key == "enterprisesitekey") siteKey = value;
             }
 
-            return (secret, apiKey);
+            return (secret, apiKey, projectId, siteKey);
         }
 
         private static string EscapeJson(string value)

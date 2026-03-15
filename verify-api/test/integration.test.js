@@ -57,20 +57,20 @@ test('standard recaptcha success', async () => {
       RECAPTCHA_MODE: 'standard',
       RECAPTCHA_SECRET_KEY: 'test-secret',
       RECAPTCHA_MIN_SCORE: '0.5',
-      RECAPTCHA_ACTION_THRESHOLDS: 'cij-form-submit:0.5,newsletter_signup:0.8'
+      RECAPTCHA_ACTION_THRESHOLDS: 'cij_form_submit:0.5,newsletter_signup:0.8'
     },
     fetchImpl: createMockFetch(async (url) => {
       assert.match(String(url), /google\.com\/recaptcha\/api\/siteverify/);
       return {
         ok: true,
-        json: async () => ({ success: true, score: 0.9, action: 'cij-form-submit' })
+        json: async () => ({ success: true, score: 0.9, action: 'cij_form_submit' })
       };
     })
   }, async (baseUrl) => {
     const result = await postJson(baseUrl, {
       provider: 'recaptcha',
       token: 'token-1',
-      action: 'cij-form-submit'
+      action: 'cij_form_submit'
     });
 
     assert.equal(result.status, 200);
@@ -86,7 +86,7 @@ test('enterprise recaptcha unconfigured action fails', async () => {
       RECAPTCHA_MODE: 'enterprise',
       RECAPTCHA_ENTERPRISE_API_KEY: 'api-key',
       RECAPTCHA_ENTERPRISE_PROJECT_ID: 'proj-1',
-      RECAPTCHA_ACTION_THRESHOLDS: 'cij-form-submit:0.5',
+      RECAPTCHA_ACTION_THRESHOLDS: 'cij_form_submit:0.5',
       RECAPTCHA_MIN_SCORE: '0.5'
     },
     fetchImpl: createMockFetch(async (url) => {
@@ -108,7 +108,7 @@ test('enterprise recaptcha unconfigured action fails', async () => {
     const result = await postJson(baseUrl, {
       provider: 'recaptcha',
       token: 'token-2',
-      action: 'cij-form-submit',
+      action: 'cij_form_submit',
       siteKey: 'site-key-1'
     });
 

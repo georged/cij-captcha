@@ -505,8 +505,6 @@
         var result = {
           provider: 'recaptcha',
           recaptchamode: 'standard',
-          projectid: '',
-          sitekey: '',
           actionthresholds: [{ action: 'cij_form_submit', threshold: '0.5' }],
           failuremessage: ''
         };
@@ -538,14 +536,6 @@
 
           if (key === 'recaptchamode' && (value === 'standard' || value === 'enterprise')) {
             result.recaptchamode = value;
-          }
-
-          if (key === 'projectid') {
-            result.projectid = pair.slice(1).join('=').trim();
-          }
-
-          if (key === 'sitekey') {
-            result.sitekey = pair.slice(1).join('=').trim();
           }
 
           if (key === 'actionthresholds') {
@@ -588,6 +578,45 @@
         return result;
       }
 
+      function parseSecureConfig(config) {
+        var result = {
+          secret: '',
+          projectid: '',
+          sitekey: ''
+        };
+
+        if (!config) return result;
+
+        var text = String(config).trim();
+        if (text && text.indexOf('=') < 0) {
+          result.secret = text;
+          return result;
+        }
+
+        var parts = text.split(';');
+        for (var i = 0; i < parts.length; i++) {
+          var pair = parts[i].split('=');
+          if (pair.length < 2) continue;
+
+          var key = pair[0].trim().toLowerCase();
+          var value = pair.slice(1).join('=').trim();
+
+          if (key === 'secret' || key === 'secretkey') {
+            result.secret = value;
+          }
+
+          if (key === 'projectid') {
+            result.projectid = value;
+          }
+
+          if (key === 'sitekey') {
+            result.sitekey = value;
+          }
+        }
+
+        return result;
+      }
+
       function getUnsecureConfig() {
         var provider = document.getElementById('provider').value;
         if (provider === 'turnstile') {
@@ -600,8 +629,6 @@
         }
 
         var recaptchaMode = getRecaptchaMode();
-        var projectId = document.getElementById('projectid').value.trim();
-        var siteKey = document.getElementById('sitekey').value.trim();
         var normalizedPairs = normalizeActionThresholdPairs(state.actionThresholdPairs);
         var failureMessage = document.getElementById('failuremessage').value.trim();
 
@@ -614,11 +641,26 @@
         ];
 
         if (failureMessage) parts.push('failuremessage=' + encodeURIComponent(failureMessage));
-        if (recaptchaMode === 'enterprise') {
+
+        return parts.join(';');
+      }
+
+      function getSecureConfig() {
+        var provider = document.getElementById('provider').value;
+        var recaptchaMode = getRecaptchaMode();
+        var secret = document.getElementById('secret').value.trim();
+        var projectId = document.getElementById('projectid').value.trim();
+        var siteKey = document.getElementById('sitekey').value.trim();
+
+        var parts = [];
+        if (secret) parts.push('secret=' + secret);
+
+        if (provider === 'recaptcha' && recaptchaMode === 'enterprise') {
           if (projectId) parts.push('projectid=' + projectId);
           if (siteKey) parts.push('sitekey=' + siteKey);
         }
 
+        if (!parts.length) return '';
         return parts.join(';');
       }
 
@@ -965,19 +1007,20 @@
         var parsed = parseUnsecureConfig(step.configuration || '');
         document.getElementById('provider').value = parsed.provider;
         setRecaptchaMode(parsed.recaptchamode);
-        document.getElementById('projectid').value = parsed.projectid;
-        document.getElementById('sitekey').value = parsed.sitekey;
         state.actionThresholdPairs = parsed.actionthresholds;
         renderActionThresholdRows();
         document.getElementById('snippet-action').value = parsed.actionthresholds[0].action || 'cij_form_submit';
         document.getElementById('failuremessage').value = parsed.failuremessage || '';
-        document.getElementById('snippet-sitekey').value = parsed.sitekey;
 
         var secureValue = '';
         if (state.secureConfigId) {
           secureValue = await loadSecureConfig(state.secureConfigId);
         }
-        document.getElementById('secret').value = secureValue;
+        var parsedSecure = parseSecureConfig(secureValue);
+        document.getElementById('secret').value = parsedSecure.secret;
+        document.getElementById('projectid').value = parsedSecure.projectid;
+        document.getElementById('sitekey').value = parsedSecure.sitekey;
+        document.getElementById('snippet-sitekey').value = parsedSecure.sitekey;
         debug('loaded secure config', { secureConfigLength: secureValue.length });
 
         render();
@@ -1003,17 +1046,22 @@
         var recaptchaMode = getRecaptchaMode();
         if (provider === 'recaptcha' && recaptchaMode === 'enterprise') {
           var projectId = document.getElementById('projectid').value.trim();
+          var siteKey = document.getElementById('sitekey').value.trim();
           if (!projectId) {
             throw new Error('Enterprise project id is required when using reCAPTCHA Enterprise mode.');
+          }
+          if (!siteKey) {
+            throw new Error('Enterprise site key is required when using reCAPTCHA Enterprise mode.');
           }
         }
 
         var unsecureConfig = getUnsecureConfig();
+        var secureConfig = getSecureConfig();
         debug('saveConfiguration start', {
           stepId: state.stepId,
           secureConfigId: state.secureConfigId,
           unsecureConfig: unsecureConfig,
-          secureConfigLength: secret.length
+          secureConfigLength: secureConfig.length
         });
 
         var secureConfigIdToBind = state.secureConfigId;
@@ -1021,12 +1069,12 @@
         if (secureConfigIdToBind) {
           debug('Updating existing secure config', secureConfigIdToBind);
           await webApiRequest('PATCH', 'sdkmessageprocessingstepsecureconfigs(' + secureConfigIdToBind + ')', {
-            secureconfig: secret
+            secureconfig: secureConfig
           });
         } else {
           debug('Creating secure config record');
           var createResult = await webApiRequest('POST', 'sdkmessageprocessingstepsecureconfigs', {
-            secureconfig: secret
+            secureconfig: secureConfig
           }, true);
 
           secureConfigIdToBind = normalizeGuid(createResult && createResult.sdkmessageprocessingstepsecureconfigid);

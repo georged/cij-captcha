@@ -302,11 +302,11 @@
             <input id="projectid" name="projectid" type="text" placeholder="my-gcp-project-id" />
           </label>
 
-          <label id="sitekey-container" for="sitekey">
-            Enterprise site key
+          <label id="apikey-container" for="apikey">
+            Enterprise API key
             <div class="secret-row">
-              <input id="sitekey" name="sitekey" type="password" placeholder="6Lxxxxxxxxxxxxxxxx" />
-              <button id="toggle-sitekey" class="secret-toggle" type="button" aria-pressed="false">Show</button>
+              <input id="apikey" name="apikey" type="password" placeholder="AIza..." />
+              <button id="toggle-apikey" class="secret-toggle" type="button" aria-pressed="false">Show</button>
             </div>
           </label>
 
@@ -395,7 +395,7 @@
         secureConfigId: '',
         isSaving: false,
         isSecretVisible: false,
-        isEnterpriseSiteKeyVisible: false,
+        isEnterpriseApiKeyVisible: false,
         actionThresholdPairs: [{ action: 'cij_form_submit', threshold: '0.5' }],
         activeTab: 'plugin',
         isLoaded: false
@@ -582,7 +582,7 @@
         var result = {
           secret: '',
           projectid: '',
-          sitekey: ''
+          apikey: ''
         };
 
         if (!config) return result;
@@ -609,8 +609,8 @@
             result.projectid = value;
           }
 
-          if (key === 'sitekey') {
-            result.sitekey = value;
+          if (key === 'apikey' || key === 'enterpriseapikey' || key === 'sitekey') {
+            result.apikey = value;
           }
         }
 
@@ -650,14 +650,14 @@
         var recaptchaMode = getRecaptchaMode();
         var secret = document.getElementById('secret').value.trim();
         var projectId = document.getElementById('projectid').value.trim();
-        var siteKey = document.getElementById('sitekey').value.trim();
+        var apiKey = document.getElementById('apikey').value.trim();
 
         var parts = [];
         if (secret) parts.push('secret=' + secret);
 
         if (provider === 'recaptcha' && recaptchaMode === 'enterprise') {
           if (projectId) parts.push('projectid=' + projectId);
-          if (siteKey) parts.push('sitekey=' + siteKey);
+          if (apiKey) parts.push('apikey=' + apiKey);
         }
 
         if (!parts.length) return '';
@@ -715,13 +715,13 @@
         var recaptchaMode = getRecaptchaMode();
         var recaptchaModeContainer = document.getElementById('recaptcha-mode-container');
         var projectIdContainer = document.getElementById('projectid-container');
-        var siteKeyContainer = document.getElementById('sitekey-container');
+        var apiKeyContainer = document.getElementById('apikey-container');
         var actionThresholdsContainer = document.getElementById('actionthresholds-container');
 
         recaptchaModeContainer.style.display = provider === 'recaptcha' ? 'flex' : 'none';
         actionThresholdsContainer.style.display = provider === 'recaptcha' ? 'flex' : 'none';
         projectIdContainer.style.display = provider === 'recaptcha' && recaptchaMode === 'enterprise' ? 'flex' : 'none';
-        siteKeyContainer.style.display = provider === 'recaptcha' && recaptchaMode === 'enterprise' ? 'flex' : 'none';
+        apiKeyContainer.style.display = provider === 'recaptcha' && recaptchaMode === 'enterprise' ? 'flex' : 'none';
         updateSnippet();
       }
 
@@ -759,18 +759,18 @@
         renderSecretVisibility();
       }
 
-      function renderEnterpriseSiteKeyVisibility() {
-        var siteKeyInput = document.getElementById('sitekey');
-        var toggleButton = document.getElementById('toggle-sitekey');
+      function renderEnterpriseApiKeyVisibility() {
+        var apiKeyInput = document.getElementById('apikey');
+        var toggleButton = document.getElementById('toggle-apikey');
 
-        siteKeyInput.type = state.isEnterpriseSiteKeyVisible ? 'text' : 'password';
-        toggleButton.textContent = state.isEnterpriseSiteKeyVisible ? 'Hide' : 'Show';
-        toggleButton.setAttribute('aria-pressed', state.isEnterpriseSiteKeyVisible ? 'true' : 'false');
+        apiKeyInput.type = state.isEnterpriseApiKeyVisible ? 'text' : 'password';
+        toggleButton.textContent = state.isEnterpriseApiKeyVisible ? 'Hide' : 'Show';
+        toggleButton.setAttribute('aria-pressed', state.isEnterpriseApiKeyVisible ? 'true' : 'false');
       }
 
-      function onToggleEnterpriseSiteKey() {
-        state.isEnterpriseSiteKeyVisible = !state.isEnterpriseSiteKeyVisible;
-        renderEnterpriseSiteKeyVisibility();
+      function onToggleEnterpriseApiKey() {
+        state.isEnterpriseApiKeyVisible = !state.isEnterpriseApiKeyVisible;
+        renderEnterpriseApiKeyVisibility();
       }
 
       function setStatus(message) {
@@ -1019,15 +1019,14 @@
         var parsedSecure = parseSecureConfig(secureValue);
         document.getElementById('secret').value = parsedSecure.secret;
         document.getElementById('projectid').value = parsedSecure.projectid;
-        document.getElementById('sitekey').value = parsedSecure.sitekey;
-        document.getElementById('snippet-sitekey').value = parsedSecure.sitekey;
+        document.getElementById('apikey').value = parsedSecure.apikey;
         debug('loaded secure config', { secureConfigLength: secureValue.length });
 
         render();
         updateSnippet();
         renderTabs();
         renderSecretVisibility();
-        renderEnterpriseSiteKeyVisibility();
+        renderEnterpriseApiKeyVisibility();
         setInputsLoaded(true);
         setStatus('Loaded current configuration.');
       }
@@ -1046,12 +1045,12 @@
         var recaptchaMode = getRecaptchaMode();
         if (provider === 'recaptcha' && recaptchaMode === 'enterprise') {
           var projectId = document.getElementById('projectid').value.trim();
-          var siteKey = document.getElementById('sitekey').value.trim();
+          var apiKey = document.getElementById('apikey').value.trim();
           if (!projectId) {
             throw new Error('Enterprise project id is required when using reCAPTCHA Enterprise mode.');
           }
-          if (!siteKey) {
-            throw new Error('Enterprise site key is required when using reCAPTCHA Enterprise mode.');
+          if (!apiKey) {
+            throw new Error('Enterprise API key is required when using reCAPTCHA Enterprise mode.');
           }
         }
 
@@ -1134,12 +1133,7 @@
           input.addEventListener('change', render);
         });
         document.getElementById('projectid').addEventListener('input', updateSnippet);
-        document.getElementById('sitekey').addEventListener('input', function (event) {
-          if (!document.getElementById('snippet-sitekey').value) {
-            document.getElementById('snippet-sitekey').value = event.target.value;
-          }
-          updateSnippet();
-        });
+        document.getElementById('apikey').addEventListener('input', updateSnippet);
         document.getElementById('add-action-threshold').addEventListener('click', function () {
           state.actionThresholdPairs.push({ action: '', threshold: '0.5' });
           renderActionThresholdRows();
@@ -1156,14 +1150,14 @@
         document.getElementById('tab-plugin').addEventListener('click', function () { setActiveTab('plugin'); });
         document.getElementById('tab-snippet').addEventListener('click', function () { setActiveTab('snippet'); });
         document.getElementById('toggle-secret').addEventListener('click', onToggleSecret);
-        document.getElementById('toggle-sitekey').addEventListener('click', onToggleEnterpriseSiteKey);
+        document.getElementById('toggle-apikey').addEventListener('click', onToggleEnterpriseApiKey);
         document.getElementById('config-form').addEventListener('submit', onSave);
 
         setInputsLoaded(false);
         renderActionThresholdRows();
         renderTabs();
         renderSecretVisibility();
-        renderEnterpriseSiteKeyVisibility();
+        renderEnterpriseApiKeyVisibility();
 
         try {
           await loadConfiguration();

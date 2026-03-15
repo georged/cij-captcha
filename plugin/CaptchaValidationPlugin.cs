@@ -8,6 +8,7 @@ using System.Runtime.Serialization.Json;
 using System.Text;
 using System.Text.Json.Serialization;
 using System.Globalization;
+using System.Text.RegularExpressions;
 using Microsoft.Xrm.Sdk;
 
 namespace Georged.Cij.Captcha
@@ -53,7 +54,7 @@ namespace Georged.Cij.Captcha
     ///     provider=turnstile            — use Cloudflare Turnstile
     ///
     ///   Secure Config  (stored encrypted by Dataverse):
-    ///     secret=&lt;captcha secret key&gt;;apikey=&lt;enterprise api key&gt;;projectid=&lt;gcp project id&gt;;sitekey=&lt;enterprise site key&gt;
+    ///     secret=<captcha secret key>;apikey=<enterprise api key>;projectid=<gcp project id>
     ///
     /// The plugin will throw an InvalidPluginExecutionException on startup if
     /// the secure config (secret key) is missing, to fail fast rather than
@@ -98,7 +99,7 @@ namespace Georged.Cij.Captcha
         /// </param>
         /// <param name="secureConfig">
         ///   Sensitive provider values stored encrypted by Dataverse.
-        ///   Supports secret/apikey/projectid/sitekey key-value pairs.
+        ///   Supports secret/apikey/projectid key-value pairs.
         /// </param>
         public CaptchaValidationPlugin(string unsecureConfig, string secureConfig)
         {
@@ -119,7 +120,9 @@ namespace Georged.Cij.Captcha
             _secretKey = secureValues.secretKey;
             _enterpriseApiKey = secureValues.enterpriseApiKey;
             _recaptchaProjectId = secureValues.recaptchaProjectId;
-            _recaptchaSiteKey = secureValues.recaptchaSiteKey;
+            _recaptchaSiteKey = string.IsNullOrWhiteSpace(secureValues.recaptchaSiteKey)
+                ? _enterpriseApiKey
+                : secureValues.recaptchaSiteKey;
 
             if (_provider == CaptchaProvider.GoogleRecaptchaV3 && _recaptchaMode == RecaptchaMode.Enterprise)
             {
@@ -444,25 +447,35 @@ namespace Georged.Cij.Captcha
                 {
                     var content = new StringContent(payload, Encoding.UTF8, "application/json");
                     var response = client.PostAsync(url, content).Result;
+                    var body = response.Content.ReadAsStringAsync().Result;
 
                     if (!response.IsSuccessStatusCode)
                     {
+                        var safeUrl = RedactSensitiveUrlParts(url);
+                        var detail = string.IsNullOrWhiteSpace(body) ? "<empty>" : body;
                         tracingService.Trace(
-                            "[CijCaptcha] Verify endpoint " + url +
-                            " returned HTTP " + (int)response.StatusCode + ".");
+                            "[CijCaptcha] Verify endpoint " + safeUrl +
+                            " returned HTTP " + (int)response.StatusCode +
+                            " " + response.ReasonPhrase +
+                            ". Response body: " + detail);
                         return null;
                     }
 
-                    var body = response.Content.ReadAsStringAsync().Result;
                     tracingService.Trace("[CijCaptcha] Verify response: " + body);
                     return body;
                 }
                 catch (Exception ex)
                 {
-                    tracingService.Trace("[CijCaptcha] Exception calling " + url + ": " + ex.Message);
+                    tracingService.Trace("[CijCaptcha] Exception calling " + RedactSensitiveUrlParts(url) + ": " + ex.Message);
                     return null;
                 }
             }
+        }
+
+        private static string RedactSensitiveUrlParts(string url)
+        {
+            if (string.IsNullOrWhiteSpace(url)) return url;
+            return Regex.Replace(url, "([?&]key=)([^&]+)", "$1<redacted>", RegexOptions.IgnoreCase);
         }
 
         // ── Output helper ──────────────────────────────────────────────────────
@@ -561,7 +574,11 @@ namespace Georged.Cij.Captcha
                 var key = kv[0].Trim().ToLowerInvariant();
                 var value = string.Join("=", kv.Skip(1)).Trim();
                 if (key == "secret" || key == "secretkey") secret = value;
-                if (key == "apikey" || key == "enterpriseapikey") apiKey = value;
+                if (key == "apikey" || key == "enterpriseapikey")
+                {
+                    apiKey = value;
+                    if (string.IsNullOrWhiteSpace(siteKey)) siteKey = value;
+                }
                 if (key == "projectid" || key == "recaptchaprojectid") projectId = value;
                 if (key == "sitekey" || key == "recaptchasitekey" || key == "enterprisesitekey") siteKey = value;
             }

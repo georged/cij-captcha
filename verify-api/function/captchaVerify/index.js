@@ -53,8 +53,9 @@ module.exports = async function (context, req) {
       (req.headers && String(req.headers['x-forwarded-for'] || '').split(',')[0].trim()) ||
       (req.headers && req.headers['x-client-ip']) ||
       '';
+    const userAgent = req.headers && String(req.headers['user-agent'] || '').trim() || '';
 
-    const result = await verifier(body, remoteip);
+    const result = await verifier(body, remoteip, userAgent);
     context.res = {
       status: 200,
       headers: {

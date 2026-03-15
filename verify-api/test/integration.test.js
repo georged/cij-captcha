@@ -79,7 +79,7 @@ test('standard recaptcha success', async () => {
   });
 });
 
-test('enterprise recaptcha unconfigured action fails', async () => {
+test('enterprise recaptcha action mismatch fails', async () => {
   await withServer({
     env: {
       CORS_ORIGINS: 'http://localhost:8000',
@@ -115,7 +115,7 @@ test('enterprise recaptcha unconfigured action fails', async () => {
     assert.equal(result.status, 200);
     assert.equal(result.json.success, false);
     assert.equal(result.json.mode, 'enterprise');
-    assert.match(String(result.json.reason), /not configured/i);
+    assert.match(String(result.json.reason), /mismatch/i);
   });
 });
 

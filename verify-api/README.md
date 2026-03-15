@@ -23,6 +23,9 @@ Request body:
   "provider": "recaptcha",
   "token": "TOKEN_FROM_CLIENT",
   "action": "cij_form_submit",
+  "formId": "FORM_BLOCK_OR_FORM_ID",
+  "siteKey": "PUBLIC_SITE_KEY_FOR_ENTERPRISE",
+  "recaptchaMode": "enterprise",
   "actionThresholds": {
     "cij_form_submit": 0.5,
     "newsletter_signup": 0.8
@@ -30,6 +33,7 @@ Request body:
 }
 ```
 
+`formId` is optional today and is forwarded for form-specific policy logic.
 `actionThresholds` is optional and can override server defaults per request.
 
 Response:

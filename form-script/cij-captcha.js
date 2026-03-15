@@ -24,6 +24,7 @@
  * Public init settings:
  *   provider: 'recaptcha' | 'turnstile'     // default 'recaptcha'
  *   siteKey: string                         // site key (public), required
+ *   formId?: string                         // optional form identifier override
  *   action: string                          // reCAPTCHA only; default 'cij_form_submit'
  *   enableDebugLogs: boolean                // default false
  *   eagerLoad: boolean                      // default true
@@ -48,12 +49,15 @@
   'use strict';
 
   var CIJ_FIELD_NAME = 'captcha-response';
+  var CIJ_ACTION_FIELD_NAME = 'captcha-action';
+  var CIJ_FORM_ID_FIELD_NAME = 'captcha-formid';
   var CIJ_FORM_SELECTOR = 'form.marketingForm';
   var CIJ_SUBMIT_EVENT = 'd365mkt-formsubmit';
 
   var DEFAULTS = {
     provider: 'recaptcha',
     siteKey: '',
+    formId: '',
     action: 'cij_form_submit',
     enableDebugLogs: false,
     eagerLoad: true,
@@ -133,6 +137,7 @@
     var result = {
       provider: base.provider,
       siteKey: base.siteKey,
+      formId: base.formId,
       action: base.action,
       enableDebugLogs: base.enableDebugLogs,
       eagerLoad: base.eagerLoad,
@@ -402,11 +407,13 @@
       errorEl.style.display = 'none';
     }
 
-    function verifyPreSubmitToken(token) {
+    function verifyPreSubmitToken(formEl, token) {
       if (!config.preSubmit.enabled) return Promise.resolve();
       if (!config.preSubmit.verifyEndpoint) {
         return Promise.reject(new Error('[CIJ Captcha] preSubmit.verifyEndpoint is required when preSubmit.enabled=true.'));
       }
+
+      var effectiveFormId = resolveFormId(formEl);
 
       var controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
       var timeoutId = null;
@@ -420,6 +427,7 @@
         provider: config.provider,
         token: token,
         action: config.action,
+        formId: effectiveFormId,
         siteKey: config.siteKey,
         recaptchaMode: config.recaptcha.mode
       };
@@ -477,6 +485,42 @@
       return input;
     }
 
+    function injectActionField(formEl) {
+      var input = formEl.querySelector('input[name="' + CIJ_ACTION_FIELD_NAME + '"]');
+      if (!input) {
+        input = document.createElement('input');
+        input.type = 'hidden';
+        input.name = CIJ_ACTION_FIELD_NAME;
+        input.value = '';
+        formEl.appendChild(input);
+      }
+      return input;
+    }
+
+    function injectFormIdField(formEl) {
+      var input = formEl.querySelector('input[name="' + CIJ_FORM_ID_FIELD_NAME + '"]');
+      if (!input) {
+        input = document.createElement('input');
+        input.type = 'hidden';
+        input.name = CIJ_FORM_ID_FIELD_NAME;
+        input.value = '';
+        formEl.appendChild(input);
+      }
+      return input;
+    }
+
+    function resolveFormId(formEl) {
+      var fromConfig = String(config.formId || '').trim();
+      if (fromConfig) return fromConfig;
+
+      // CIJ markup stores the canonical form id on the containing form block div.
+      var holder = formEl.closest ? formEl.closest('div[data-form-id]') : null;
+      var holderFormId = holder ? String(holder.getAttribute('data-form-id') || '').trim() : '';
+      if (holderFormId) return holderFormId;
+
+      return '';
+    }
+
     function getFormFromCijEvent(event) {
       var target = event && event.target;
       if (!target) return null;
@@ -495,6 +539,10 @@
       if (formEl._cijCaptchaResubmitting) return;
 
       var captchaField = injectHiddenField(formEl);
+      var actionField = injectActionField(formEl);
+      var formIdField = injectFormIdField(formEl);
+      actionField.value = String(config.action || '').trim();
+      formIdField.value = resolveFormId(formEl);
       if (captchaField && captchaField.value) return;
 
       event.preventDefault();
@@ -514,7 +562,7 @@
           }
 
           debug('Pre-submit verification enabled; verifying token before submit.');
-          return verifyPreSubmitToken(token)
+          return verifyPreSubmitToken(formEl, token)
             .then(function () {
               debug('Pre-submit token verified; requesting fresh token for backend submission.');
               // Provider verification tokens are single-use; submit a fresh token to backend.

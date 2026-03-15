@@ -89,7 +89,7 @@ function validateRequestBody(body) {
   return null;
 }
 
-async function verifyRecaptchaStandard({ token, action, remoteip, env, fetchImpl }) {
+async function verifyRecaptchaStandard({ token, action, remoteip, env, fetchImpl }) { // formId reserved for future per-form policy
   const secret = String(env.RECAPTCHA_SECRET_KEY || '').trim();
   if (!secret) {
     throw new Error('RECAPTCHA_SECRET_KEY is not configured.');
@@ -130,8 +130,19 @@ async function verifyRecaptchaStandard({ token, action, remoteip, env, fetchImpl
     };
   }
 
+  const receivedAction = String(result.action || '').trim();
+  if (receivedAction && action && receivedAction !== action) {
+    return {
+      success: false,
+      reason: `reCAPTCHA action mismatch. Received '${receivedAction}', expected '${action}'.`,
+      provider: 'recaptcha',
+      score: typeof result.score === 'number' ? result.score : null,
+      errors: result['error-codes'] || []
+    };
+  }
+
   const thresholdResult = resolveThresholdForAction({
-    action: result.action || action,
+    action: receivedAction || action,
     actionThresholds,
     fallbackThreshold: minScore
   });
@@ -166,7 +177,7 @@ async function verifyRecaptchaStandard({ token, action, remoteip, env, fetchImpl
   };
 }
 
-async function verifyRecaptchaEnterprise({ token, action, siteKey, remoteip, env, fetchImpl }) {
+async function verifyRecaptchaEnterprise({ token, action, siteKey, remoteip, userAgent, env, fetchImpl }) {
   const apiKey = String(env.RECAPTCHA_ENTERPRISE_API_KEY || '').trim();
   const projectId = String(env.RECAPTCHA_ENTERPRISE_PROJECT_ID || '').trim();
   const minScore = parseScore(env.RECAPTCHA_MIN_SCORE, 0.5);
@@ -199,6 +210,9 @@ async function verifyRecaptchaEnterprise({ token, action, siteKey, remoteip, env
   if (remoteip) {
     event.userIpAddress = remoteip;
   }
+  if (userAgent) {
+    event.userAgent = userAgent;
+  }
 
   const response = await fetchImpl(endpoint, {
     method: 'POST',
@@ -226,6 +240,17 @@ async function verifyRecaptchaEnterprise({ token, action, siteKey, remoteip, env
       mode: 'enterprise',
       score,
       errors: tokenProperties.invalidReason ? [tokenProperties.invalidReason] : []
+    };
+  }
+
+  if (receivedAction && effectiveAction && receivedAction !== effectiveAction) {
+    return {
+      success: false,
+      reason: `reCAPTCHA Enterprise action mismatch. Received '${receivedAction}', expected '${effectiveAction}'.`,
+      provider: 'recaptcha',
+      mode: 'enterprise',
+      score,
+      errors: []
     };
   }
 
@@ -266,13 +291,13 @@ async function verifyRecaptchaEnterprise({ token, action, siteKey, remoteip, env
   };
 }
 
-async function verifyRecaptcha({ token, action, siteKey, remoteip, env, fetchImpl }) {
+async function verifyRecaptcha({ token, action, formId, siteKey, remoteip, userAgent, env, fetchImpl }) {
   const mode = String(env.RECAPTCHA_MODE || 'standard').trim().toLowerCase();
   if (mode === 'enterprise') {
-    return verifyRecaptchaEnterprise({ token, action, siteKey, remoteip, env, fetchImpl });
+    return verifyRecaptchaEnterprise({ token, action, formId, siteKey, remoteip, userAgent, env, fetchImpl });
   }
 
-  return verifyRecaptchaStandard({ token, action, remoteip, env, fetchImpl });
+  return verifyRecaptchaStandard({ token, action, formId, remoteip, env, fetchImpl });
 }
 
 async function verifyTurnstile({ token, remoteip, env, fetchImpl }) {
@@ -353,7 +378,8 @@ function createApp(options = {}) {
 
       const forwardedFor = String(req.headers['x-forwarded-for'] || '').split(',')[0].trim();
       const remoteip = forwardedFor || req.ip;
-      const result = await verifier(req.body, remoteip);
+      const userAgent = String(req.headers['user-agent'] || '').trim();
+      const result = await verifier(req.body, remoteip, userAgent);
 
       res.json(result);
     } catch (error) {
@@ -372,10 +398,11 @@ function createVerifier(options = {}) {
   const env = options.env || process.env;
   const fetchImpl = options.fetchImpl || fetch;
 
-  return async function verify(body, remoteip) {
+  return async function verify(body, remoteip, userAgent) {
     const provider = String(body.provider || '').trim().toLowerCase();
     const token = String(body.token || '').trim();
     const action = String(body.action || '').trim();
+    const formId = String(body.formId || body.formid || '').trim();
     const siteKey = String(body.siteKey || '').trim();
     const actionThresholds = body.actionThresholds || body.actionthresholds || null;
 
@@ -387,7 +414,7 @@ function createVerifier(options = {}) {
     };
 
     return provider === 'recaptcha'
-      ? verifyRecaptcha({ token, action, siteKey, remoteip, env: requestEnv, fetchImpl })
+      ? verifyRecaptcha({ token, action, formId, siteKey, remoteip, userAgent, env: requestEnv, fetchImpl })
       : verifyTurnstile({ token, remoteip, env: requestEnv, fetchImpl });
   };
 }

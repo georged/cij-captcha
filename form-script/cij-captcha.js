@@ -181,7 +181,11 @@
         if (global.grecaptcha &&
           ((config.recaptcha.mode === 'enterprise' && global.grecaptcha.enterprise && global.grecaptcha.enterprise.execute) ||
             (config.recaptcha.mode !== 'enterprise' && global.grecaptcha.execute))) {
-          global.grecaptcha.ready(function () { resolve(); });
+          if (config.recaptcha.mode === 'enterprise') {
+            global.grecaptcha.enterprise.ready(function () { resolve(); });
+          } else {
+            global.grecaptcha.ready(function () { resolve(); });
+          }
           return;
         }
         var s = document.createElement('script');
@@ -190,7 +194,13 @@
           : 'https://www.google.com/recaptcha/api.js?render=';
         s.src = recaptchaBase + encodeURIComponent(config.siteKey);
         s.async = true;
-        s.onload = function () { global.grecaptcha.ready(function () { resolve(); }); };
+        s.onload = function () {
+          if (config.recaptcha.mode === 'enterprise') {
+            global.grecaptcha.enterprise.ready(function () { resolve(); });
+          } else {
+            global.grecaptcha.ready(function () { resolve(); });
+          }
+        };
         s.onerror = function () {
           state.loadPromise = null;
           reject(new Error('[CIJ Captcha] Failed to load reCAPTCHA script.'));
@@ -312,8 +322,13 @@
         }
       }
 
-      if (submitWrapper && submitWrapper.parentNode) {
-        submitWrapper.parentNode.insertBefore(errorEl, submitWrapper);
+      if (submitWrapper) {
+        var submitControl = submitWrapper.querySelector('button[type="submit"], input[type="submit"]');
+        if (submitControl && submitControl.parentNode === submitWrapper) {
+          submitWrapper.insertBefore(errorEl, submitControl);
+        } else {
+          submitWrapper.insertBefore(errorEl, submitWrapper.firstChild);
+        }
         return;
       }
 
@@ -365,6 +380,7 @@
       errorEl.style.color = '#b91c1c';
       errorEl.style.fontSize = '14px';
       errorEl.style.marginTop = '8px';
+      errorEl.style.marginBottom = '8px';
       errorEl.style.display = 'none';
       placeErrorElement(formEl, errorEl);
       return errorEl;

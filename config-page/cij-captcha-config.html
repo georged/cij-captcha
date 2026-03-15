@@ -582,7 +582,8 @@
         var result = {
           secret: '',
           projectid: '',
-          apikey: ''
+            apikey: '',
+            sitekey: ''
         };
 
         if (!config) return result;
@@ -609,9 +610,14 @@
             result.projectid = value;
           }
 
-          if (key === 'apikey' || key === 'enterpriseapikey' || key === 'sitekey') {
+          if (key === 'apikey' || key === 'enterpriseapikey') {
             result.apikey = value;
           }
+
+            if (key === 'sitekey' || key === 'recaptchasitekey' || key === 'enterprisesitekey' || key === 'publicsitekey') {
+              result.sitekey = value;
+            }
+
         }
 
         return result;
@@ -651,6 +657,7 @@
         var secret = document.getElementById('secret').value.trim();
         var projectId = document.getElementById('projectid').value.trim();
         var apiKey = document.getElementById('apikey').value.trim();
+          var siteKey = document.getElementById('snippet-sitekey').value.trim();
 
         var parts = [];
         if (secret) parts.push('secret=' + secret);
@@ -658,6 +665,7 @@
         if (provider === 'recaptcha' && recaptchaMode === 'enterprise') {
           if (projectId) parts.push('projectid=' + projectId);
           if (apiKey) parts.push('apikey=' + apiKey);
+            if (siteKey) parts.push('sitekey=' + siteKey);
         }
 
         if (!parts.length) return '';
@@ -1020,6 +1028,9 @@
         document.getElementById('secret').value = parsedSecure.secret;
         document.getElementById('projectid').value = parsedSecure.projectid;
         document.getElementById('apikey').value = parsedSecure.apikey;
+        if (parsedSecure.sitekey) {
+          document.getElementById('snippet-sitekey').value = parsedSecure.sitekey;
+        }
         debug('loaded secure config', { secureConfigLength: secureValue.length });
 
         render();
@@ -1055,6 +1066,10 @@
         }
 
         var unsecureConfig = getUnsecureConfig();
+        var expectedAction = document.getElementById('snippet-action').value.trim();
+        if (expectedAction) {
+          unsecureConfig += ';expectedaction=' + encodeURIComponent(expectedAction);
+        }
         var secureConfig = getSecureConfig();
         debug('saveConfiguration start', {
           stepId: state.stepId,

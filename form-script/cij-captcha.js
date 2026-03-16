@@ -44,6 +44,18 @@
  *     theme?: 'auto'|'light'|'dark',                       // default 'auto'
  *     tokenReuseTimeout?: number                           // default 240000 (4 minutes)             
  *   }
+ *
+ * Per-form overrides (HTML attributes on the div[data-form-id] container):
+ *   data-captcha-action="..."             // overrides action for this form only (reCAPTCHA)
+ *   data-captcha-failure-message="..."    // overrides preSubmit.failureMessage for this form only
+ *
+ * Example (two forms, different actions):
+ *   <div data-form-id="form-guid-1" data-captcha-action="newsletter_signup">...</div>
+ *   <div data-form-id="form-guid-2" data-captcha-action="checkout_submit"
+ *        data-captcha-failure-message="Submission blocked. Please try again.">...</div>
+ *   <script>
+ *     window.CijCaptcha.init({ provider: 'recaptcha', siteKey: 'YOUR_KEY' });
+ *   </script>
  */
 (function (global) {
   'use strict';
@@ -72,8 +84,7 @@
     preSubmit: {
       enabled: false,
       verifyEndpoint: '',
-      timeout: 8000,
-      failureMessage: 'Captcha verification failed. Please try again.'
+      timeout: 8000
     },
     turnstile: {
       size: 'normal',
@@ -220,16 +231,17 @@
       return state.loadPromise;
     }
 
-    function getRecaptchaToken() {
+    function getRecaptchaToken(action) {
+      var effectiveAction = action || config.action;
       return loadRecaptchaScript().then(function () {
         if (config.recaptcha.mode === 'enterprise') {
           if (!global.grecaptcha || !global.grecaptcha.enterprise || !global.grecaptcha.enterprise.execute) {
             throw new Error('[CIJ Captcha] reCAPTCHA Enterprise API is not available.');
           }
-          return global.grecaptcha.enterprise.execute(config.siteKey, { action: config.action });
+          return global.grecaptcha.enterprise.execute(config.siteKey, { action: effectiveAction });
         }
 
-        return global.grecaptcha.execute(config.siteKey, { action: config.action });
+        return global.grecaptcha.execute(config.siteKey, { action: effectiveAction });
       });
     }
 
@@ -375,7 +387,7 @@
     function getToken(formEl, options) {
       return config.provider === 'turnstile'
         ? getTurnstileToken(formEl, options)
-        : getRecaptchaToken();
+        : getRecaptchaToken(getFormAction(formEl));
     }
 
     function getErrorElement(formEl) {
@@ -400,7 +412,7 @@
       var errorEl = getErrorElement(formEl);
       errorEl.textContent =
         message ||
-        config.preSubmit.failureMessage ||
+        getExplicitFailureMessage(formEl) ||
         config.preSubmit.fallbackFailureMessage;
       errorEl.style.display = 'block';
     }
@@ -431,7 +443,7 @@
       var payload = {
         provider: config.provider,
         token: token,
-        action: config.action,
+        action: getFormAction(formEl),
         formId: effectiveFormId,
         siteKey: config.siteKey,
         recaptchaMode: config.recaptcha.mode
@@ -463,7 +475,7 @@
               })
               .then(function (json) {
                 var reason =
-                  config.preSubmit.failureMessage ||
+                  getExplicitFailureMessage(formEl) ||
                   (json && json.reason ? String(json.reason) : '') ||
                   '[CIJ Captcha] Pre-submit verification endpoint returned ' + response.status + '.';
                 throw new Error(reason);
@@ -474,7 +486,7 @@
         .then(function (json) {
           if (!json || (json.success !== true && json.valid !== true)) {
             var reason =
-              config.preSubmit.failureMessage ||
+              getExplicitFailureMessage(formEl) ||
               (json && json.reason ? String(json.reason) : '') ||
               config.preSubmit.fallbackFailureMessage;
             throw new Error(reason);
@@ -542,6 +554,18 @@
       return '';
     }
 
+    function getFormAction(formEl) {
+      var holder = formEl.closest ? formEl.closest('div[data-form-id]') : null;
+      var attr = holder ? String(holder.getAttribute('data-captcha-action') || '').trim() : '';
+      return attr || String(config.action || '').trim();
+    }
+
+    function getExplicitFailureMessage(formEl) {
+      var holder = formEl.closest ? formEl.closest('div[data-form-id]') : null;
+      var attr = holder ? String(holder.getAttribute('data-captcha-failure-message') || '').trim() : '';
+      return attr || config.preSubmit.failureMessage || '';
+    }
+
     function getFormFromCijEvent(event) {
       var target = event && event.target;
       if (!target) return null;
@@ -562,7 +586,7 @@
       var captchaField = injectHiddenField(formEl);
       var actionField = injectActionField(formEl);
       var formIdField = injectFormIdField(formEl);
-      actionField.value = String(config.action || '').trim();
+      actionField.value = getFormAction(formEl);
       formIdField.value = resolveFormId(formEl);
       if (captchaField && captchaField.value) return;
 

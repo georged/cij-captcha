@@ -48,6 +48,11 @@
 (function (global) {
   'use strict';
 
+  // If the script was already loaded, keep the existing API instance.
+  if (global.CijCaptcha && global.CijCaptcha.__cijCaptchaLoaded) {
+    return;
+  }
+
   var CIJ_FIELD_NAME = 'captcha-response';
   var CIJ_ACTION_FIELD_NAME = 'captcha-action';
   var CIJ_FORM_ID_FIELD_NAME = 'captcha-formid';
@@ -708,6 +713,8 @@
     },
     version: '2.0.0'
   };
+
+  rootApi.__cijCaptchaLoaded = true;
 
   global.CijCaptcha = rootApi;
 })(window);

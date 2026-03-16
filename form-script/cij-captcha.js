@@ -448,6 +448,13 @@
       if (controller) request.signal = controller.signal;
 
       return fetch(config.preSubmit.verifyEndpoint, request)
+        .catch(function (error) {
+          // Endpoint is unreachable (network error or timeout). Allow submit to continue.
+          var reachabilityError = new Error('[CIJ Captcha] Pre-submit verification endpoint is unreachable.');
+          reachabilityError.cijAllowProceed = true;
+          reachabilityError.cause = error;
+          throw reachabilityError;
+        })
         .then(function (response) {
           if (!response.ok) {
             return response.json()
@@ -476,6 +483,15 @@
         .finally(function () {
           if (timeoutId) clearTimeout(timeoutId);
         });
+    }
+
+    function isPreSubmitReachabilityError(err) {
+      if (!err) return false;
+      if (err.cijAllowProceed === true) return true;
+      var name = String(err.name || '').toLowerCase();
+      if (name === 'aborterror') return true;
+      var message = String(err.message || '').toLowerCase();
+      return message.indexOf('failed to fetch') >= 0 || message.indexOf('network') >= 0;
     }
 
     function injectHiddenField(formEl) {
@@ -572,6 +588,14 @@
               debug('Pre-submit token verified; requesting fresh token for backend submission.');
               // Provider verification tokens are single-use; submit a fresh token to backend.
               return getToken(formEl, { forceFresh: true });
+            })
+            .catch(function (err) {
+              if (isPreSubmitReachabilityError(err)) {
+                console.warn('[CIJ Captcha] Pre-submit verification skipped because endpoint is unreachable. Proceeding with submit.', err);
+                // The token was not consumed by server-side pre-submit verification, so it can be submitted as-is.
+                return token;
+              }
+              throw err;
             });
         })
         .then(function (submissionToken) {

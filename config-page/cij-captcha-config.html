@@ -250,6 +250,42 @@
       font-size: 14px;
     }
 
+    .btn-secondary {
+      border-color: #9ca3af;
+      background: #fff;
+      color: #111827;
+    }
+
+    dialog {
+      border: 1px solid #9ca3af;
+      border-radius: 6px;
+      padding: 20px;
+      width: min(560px, 90vw);
+      box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+    }
+
+    dialog h2 {
+      margin: 0 0 8px;
+      font-size: 16px;
+    }
+
+    dialog p {
+      margin: 0 0 12px;
+      font-size: 13px;
+      color: #6b7280;
+    }
+
+    .dialog-actions {
+      margin-top: 12px;
+      display: flex;
+      gap: 8px;
+      justify-content: flex-end;
+    }
+
+    dialog::backdrop {
+      background: rgba(0,0,0,0.3);
+    }
+
     .hint {
       color: #6b7280;
       font-size: 13px;
@@ -308,6 +344,11 @@
               <input id="apikey" name="apikey" type="password" placeholder="AIza..." />
               <button id="toggle-apikey" class="secret-toggle" type="button" aria-pressed="false">Show</button>
             </div>
+          </label>
+
+          <label id="enterprise-sitekey-container" for="enterprise-sitekey">
+            Enterprise site key
+            <input id="enterprise-sitekey" name="enterprise-sitekey" type="text" placeholder="6Lc..." />
           </label>
 
           <div id="actionthresholds-container" class="action-thresholds">
@@ -375,9 +416,20 @@
 
       <div class="actions">
         <button id="save-btn" type="submit">Save Configuration</button>
+        <button id="copy-verifyapi-btn" type="button" class="btn-secondary">Copy for verify-api</button>
         <div id="status" class="status">Loading configuration...</div>
       </div>
     </form>
+
+    <dialog id="verifyapi-dialog" aria-labelledby="verifyapi-dialog-title">
+      <h2 id="verifyapi-dialog-title">verify-api config.json</h2>
+      <p>Save this as <code>verify-api/config.json</code>. Environment variables take precedence when both are set.</p>
+      <textarea id="verifyapi-json" readonly spellcheck="false"></textarea>
+      <div class="dialog-actions">
+        <button id="copy-json-btn" type="button">Copy to clipboard</button>
+        <button id="close-dialog-btn" type="button" class="btn-secondary">Close</button>
+      </div>
+    </dialog>
 
     <div class="hint">Don't forget to add form hosting domain (e.g. `assets-usa.mkt.dynamics.com`) to the list of approved domains for your captcha keys.</div>
   </main>
@@ -510,114 +562,51 @@
         };
         if (!config) return result;
 
-        var hasActionThresholds = false;
-        var legacyExpectedAction = 'cij_form_submit';
-        var legacyMinScore = 0.5;
+        try {
+          var json = JSON.parse(config);
 
-        function decodeConfigValue(value) {
-          try {
-            return decodeURIComponent(value);
-          } catch (error) {
-            return value;
+          if (json.provider === 'recaptcha' || json.provider === 'turnstile') {
+            result.provider = json.provider;
           }
+
+          if (json.recaptchaMode === 'standard' || json.recaptchaMode === 'enterprise') {
+            result.recaptchamode = json.recaptchaMode;
+          }
+
+          result.failuremessage = json.failureMessage || '';
+
+          if (json.actionThresholds && typeof json.actionThresholds === 'object' && !Array.isArray(json.actionThresholds)) {
+            var pairs = [];
+            Object.keys(json.actionThresholds).forEach(function (action) {
+              if (action) {
+                pairs.push({ action: action, threshold: String(clamp(Number(json.actionThresholds[action]) || 0.5)) });
+              }
+            });
+            if (pairs.length) result.actionthresholds = pairs;
+          }
+        } catch (e) {
+          // Not valid JSON — return defaults
         }
 
-        var parts = String(config).split(';');
-        for (var i = 0; i < parts.length; i++) {
-          var pair = parts[i].split('=');
-          if (pair.length < 2) continue;
-
-          var key = pair[0].trim().toLowerCase();
-          var value = pair.slice(1).join('=').trim().toLowerCase();
-
-          if (key === 'provider' && (value === 'recaptcha' || value === 'turnstile')) {
-            result.provider = value;
-          }
-
-          if (key === 'recaptchamode' && (value === 'standard' || value === 'enterprise')) {
-            result.recaptchamode = value;
-          }
-
-          if (key === 'actionthresholds') {
-            var pairs = decodeConfigValue(pair.slice(1).join('=').trim()).split(',');
-            var parsedPairs = [];
-            for (var p = 0; p < pairs.length; p++) {
-              var split = pairs[p].split(':');
-              var action = String(split[0] || '').trim();
-              var threshold = clamp(Number(String(split[1] || '').trim()) || 0.5);
-              if (!action) continue;
-              parsedPairs.push({ action: action, threshold: String(threshold) });
-            }
-
-            if (parsedPairs.length) {
-              result.actionthresholds = parsedPairs;
-              hasActionThresholds = true;
-            }
-          }
-
-          if (key === 'expectedaction') {
-            legacyExpectedAction = decodeConfigValue(pair.slice(1).join('=').trim()) || 'cij_form_submit';
-          }
-
-          if (key === 'minscore') {
-            var parsed = Number(value);
-            if (!Number.isNaN(parsed)) {
-              legacyMinScore = clamp(parsed);
-            }
-          }
-
-          if (key === 'failuremessage') {
-            result.failuremessage = decodeConfigValue(pair.slice(1).join('=').trim());
-          }
-        }
-
-        if (!hasActionThresholds) {
-          result.actionthresholds = [{ action: legacyExpectedAction, threshold: String(legacyMinScore) }];
+        return result;
+      }
         }
 
         return result;
       }
 
       function parseSecureConfig(config) {
-        var result = {
-          secret: '',
-          projectid: '',
-            apikey: '',
-            sitekey: ''
-        };
-
+        var result = { secret: '', projectid: '', apikey: '', sitekey: '' };
         if (!config) return result;
 
-        var text = String(config).trim();
-        if (text && text.indexOf('=') < 0) {
-          result.secret = text;
-          return result;
-        }
-
-        var parts = text.split(';');
-        for (var i = 0; i < parts.length; i++) {
-          var pair = parts[i].split('=');
-          if (pair.length < 2) continue;
-
-          var key = pair[0].trim().toLowerCase();
-          var value = pair.slice(1).join('=').trim();
-
-          if (key === 'secret' || key === 'secretkey') {
-            result.secret = value;
-          }
-
-          if (key === 'projectid') {
-            result.projectid = value;
-          }
-
-          if (key === 'apikey' || key === 'enterpriseapikey') {
-            result.apikey = value;
-          }
-
-            if (key === 'sitekey' || key === 'recaptchasitekey' || key === 'enterprisesitekey' || key === 'publicsitekey') {
-              result.sitekey = value;
-            }
-
+        try {
+          var json = JSON.parse(config);
+          result.secret    = json.secretKey          || '';
+          result.projectid = json.enterpriseProjectId || '';
+          result.apikey    = json.enterpriseApiKey    || '';
+          result.sitekey   = json.enterpriseSiteKey   || '';
+        } catch (e) {
+          // Not valid JSON
         }
 
         return result;
@@ -625,30 +614,23 @@
 
       function getUnsecureConfig() {
         var provider = document.getElementById('provider').value;
-        if (provider === 'turnstile') {
-          var turnstileParts = ['provider=turnstile'];
-          var turnstileFailureMessage = document.getElementById('failuremessage').value.trim();
-          if (turnstileFailureMessage) {
-            turnstileParts.push('failuremessage=' + encodeURIComponent(turnstileFailureMessage));
-          }
-          return turnstileParts.join(';');
-        }
-
         var recaptchaMode = getRecaptchaMode();
         var normalizedPairs = normalizeActionThresholdPairs(state.actionThresholdPairs);
         var failureMessage = document.getElementById('failuremessage').value.trim();
 
-        var parts = [
-          'provider=recaptcha',
-          'recaptchamode=' + recaptchaMode,
-          'actionthresholds=' + normalizedPairs.map(function (pair) {
-            return pair.action + ':' + pair.threshold;
-          }).join(',')
-        ];
+        var actionThresholds = {};
+        normalizedPairs.forEach(function (pair) {
+          actionThresholds[pair.action] = parseFloat(pair.threshold);
+        });
 
-        if (failureMessage) parts.push('failuremessage=' + encodeURIComponent(failureMessage));
+        var config = {
+          provider: provider,
+          recaptchaMode: recaptchaMode,
+          actionThresholds: actionThresholds
+        };
+        if (failureMessage) config.failureMessage = failureMessage;
 
-        return parts.join(';');
+        return JSON.stringify(config);
       }
 
       function getSecureConfig() {
@@ -657,19 +639,19 @@
         var secret = document.getElementById('secret').value.trim();
         var projectId = document.getElementById('projectid').value.trim();
         var apiKey = document.getElementById('apikey').value.trim();
-          var siteKey = document.getElementById('snippet-sitekey').value.trim();
+        var siteKey = document.getElementById('enterprise-sitekey').value.trim();
 
-        var parts = [];
-        if (secret) parts.push('secret=' + secret);
+        var config = {};
+        if (secret) config.secretKey = secret;
 
         if (provider === 'recaptcha' && recaptchaMode === 'enterprise') {
-          if (projectId) parts.push('projectid=' + projectId);
-          if (apiKey) parts.push('apikey=' + apiKey);
-            if (siteKey) parts.push('sitekey=' + siteKey);
+          if (projectId) config.enterpriseProjectId = projectId;
+          if (apiKey)    config.enterpriseApiKey    = apiKey;
+          if (siteKey)   config.enterpriseSiteKey   = siteKey;
         }
 
-        if (!parts.length) return '';
-        return parts.join(';');
+        if (!Object.keys(config).length) return '';
+        return JSON.stringify(config);
       }
 
       function updateSnippet() {
@@ -724,12 +706,14 @@
         var recaptchaModeContainer = document.getElementById('recaptcha-mode-container');
         var projectIdContainer = document.getElementById('projectid-container');
         var apiKeyContainer = document.getElementById('apikey-container');
+        var enterpriseSiteKeyContainer = document.getElementById('enterprise-sitekey-container');
         var actionThresholdsContainer = document.getElementById('actionthresholds-container');
 
         recaptchaModeContainer.style.display = provider === 'recaptcha' ? 'flex' : 'none';
         actionThresholdsContainer.style.display = provider === 'recaptcha' ? 'flex' : 'none';
         projectIdContainer.style.display = provider === 'recaptcha' && recaptchaMode === 'enterprise' ? 'flex' : 'none';
         apiKeyContainer.style.display = provider === 'recaptcha' && recaptchaMode === 'enterprise' ? 'flex' : 'none';
+        enterpriseSiteKeyContainer.style.display = provider === 'recaptcha' && recaptchaMode === 'enterprise' ? 'flex' : 'none';
         updateSnippet();
       }
 
@@ -1028,6 +1012,7 @@
         document.getElementById('secret').value = parsedSecure.secret;
         document.getElementById('projectid').value = parsedSecure.projectid;
         document.getElementById('apikey').value = parsedSecure.apikey;
+        document.getElementById('enterprise-sitekey').value = parsedSecure.sitekey;
         if (parsedSecure.sitekey) {
           document.getElementById('snippet-sitekey').value = parsedSecure.sitekey;
         }
@@ -1063,13 +1048,13 @@
           if (!apiKey) {
             throw new Error('Enterprise API key is required when using reCAPTCHA Enterprise mode.');
           }
+          var enterpriseSiteKey = document.getElementById('enterprise-sitekey').value.trim();
+          if (!enterpriseSiteKey) {
+            throw new Error('Enterprise site key is required when using reCAPTCHA Enterprise mode.');
+          }
         }
 
         var unsecureConfig = getUnsecureConfig();
-        var expectedAction = document.getElementById('snippet-action').value.trim();
-        if (expectedAction) {
-          unsecureConfig += ';expectedaction=' + encodeURIComponent(expectedAction);
-        }
         var secureConfig = getSecureConfig();
         debug('saveConfiguration start', {
           stepId: state.stepId,
@@ -1156,6 +1141,10 @@
         });
         document.getElementById('failuremessage').addEventListener('input', render);
         document.getElementById('snippet-action').addEventListener('input', updateSnippet);
+        document.getElementById('enterprise-sitekey').addEventListener('input', function () {
+          document.getElementById('snippet-sitekey').value = this.value;
+          updateSnippet();
+        });
         document.getElementById('snippet-sitekey').addEventListener('input', updateSnippet);
         document.getElementById('snippet-endpoint').addEventListener('input', updateSnippet);
         document.getElementById('snippet-timeout').addEventListener('input', updateSnippet);
@@ -1167,6 +1156,25 @@
         document.getElementById('toggle-secret').addEventListener('click', onToggleSecret);
         document.getElementById('toggle-apikey').addEventListener('click', onToggleEnterpriseApiKey);
         document.getElementById('config-form').addEventListener('submit', onSave);
+        document.getElementById('copy-verifyapi-btn').addEventListener('click', function () {
+          var json = getVerifyApiConfig();
+          document.getElementById('verifyapi-json').value = json;
+          document.getElementById('verifyapi-dialog').showModal();
+        });
+        document.getElementById('close-dialog-btn').addEventListener('click', function () {
+          document.getElementById('verifyapi-dialog').close();
+        });
+        document.getElementById('copy-json-btn').addEventListener('click', function () {
+          var ta = document.getElementById('verifyapi-json');
+          ta.select();
+          try {
+            navigator.clipboard.writeText(ta.value).catch(function () { document.execCommand('copy'); });
+          } catch (e) {
+            document.execCommand('copy');
+          }
+          document.getElementById('copy-json-btn').textContent = 'Copied!';
+          setTimeout(function () { document.getElementById('copy-json-btn').textContent = 'Copy to clipboard'; }, 2000);
+        });
 
         setInputsLoaded(false);
         renderActionThresholdRows();
@@ -1181,6 +1189,36 @@
           debug('Initialization failed', error);
           setStatus('Load failed: ' + message);
         }
+      }
+
+      function getVerifyApiConfig() {
+        var provider = document.getElementById('provider').value;
+        var recaptchaMode = getRecaptchaMode();
+        var normalizedPairs = normalizeActionThresholdPairs(state.actionThresholdPairs);
+        var secretKey = document.getElementById('secret').value.trim();
+        var projectId = document.getElementById('projectid').value.trim();
+        var apiKey = document.getElementById('apikey').value.trim();
+        var siteKey = document.getElementById('enterprise-sitekey').value.trim();
+
+        var actionThresholds = {};
+        normalizedPairs.forEach(function (pair) {
+          actionThresholds[pair.action] = parseFloat(pair.threshold);
+        });
+
+        var config = {
+          recaptchaMode: recaptchaMode,
+          actionThresholds: actionThresholds
+        };
+
+        if (secretKey) config.secretKey = secretKey;
+
+        if (provider === 'recaptcha' && recaptchaMode === 'enterprise') {
+          if (projectId) config.enterpriseProjectId = projectId;
+          if (apiKey)    config.enterpriseApiKey    = apiKey;
+          if (siteKey)   config.enterpriseSiteKey   = siteKey;
+        }
+
+        return JSON.stringify(config, null, 2);
       }
 
       if (document.readyState === 'loading') {

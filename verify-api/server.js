@@ -1,9 +1,39 @@
 const express = require('express');
 const cors = require('cors');
 const dotenv = require('dotenv');
+const fs = require('fs');
 const path = require('path');
 
 dotenv.config({ path: path.join(__dirname, '.env') });
+
+/**
+ * Loads verify-api/config.json and maps its keys to the equivalent env var names.
+ * Keys in config.json (same format produced by the plugin config page "Copy for verify-api"):
+ *   recaptchaMode, actionThresholds, secretKey, enterpriseProjectId,
+ *   enterpriseApiKey, enterpriseSiteKey, corsOrigins
+ * Env vars always take precedence over config.json values.
+ */
+function loadConfigFile(configPath) {
+  try {
+    const content = fs.readFileSync(configPath, 'utf8');
+    const config = JSON.parse(content);
+    const env = {};
+    if (config.recaptchaMode != null) env.RECAPTCHA_MODE = String(config.recaptchaMode);
+    if (config.actionThresholds != null) env.RECAPTCHA_ACTION_THRESHOLDS = config.actionThresholds;
+    if (config.secretKey != null) env.CAPTCHA_SECRET_KEY = String(config.secretKey);
+    if (config.enterpriseProjectId != null) env.RECAPTCHA_ENTERPRISE_PROJECT_ID = String(config.enterpriseProjectId);
+    if (config.enterpriseApiKey != null) env.RECAPTCHA_ENTERPRISE_API_KEY = String(config.enterpriseApiKey);
+    if (config.enterpriseSiteKey != null) env.RECAPTCHA_SITE_KEY = String(config.enterpriseSiteKey);
+    if (config.corsOrigins != null) {
+      env.CORS_ORIGINS = Array.isArray(config.corsOrigins)
+        ? config.corsOrigins.join(',')
+        : String(config.corsOrigins);
+    }
+    return env;
+  } catch {
+    return {};
+  }
+}
 
 function asBool(value) {
   return value === true || value === 'true';
@@ -15,7 +45,9 @@ function parseScore(value, fallback) {
   return Math.max(0, Math.min(1, parsed));
 }
 
-function parseActionThresholds(raw, fallbackAction = 'cij_form_submit', fallbackThreshold = 0.5) {
+function parseActionThresholds(raw) {
+  const fallbackAction = 'cij_form_submit';
+  const fallbackThreshold = 0.5;
   const result = {};
 
   if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
@@ -90,9 +122,9 @@ function validateRequestBody(body) {
 }
 
 async function verifyRecaptchaStandard({ token, action, remoteip, env, fetchImpl }) { // formId reserved for future per-form policy
-  const secret = String(env.RECAPTCHA_SECRET_KEY || '').trim();
+  const secret = String(env.RECAPTCHA_SECRET_KEY || env.CAPTCHA_SECRET_KEY || '').trim();
   if (!secret) {
-    throw new Error('RECAPTCHA_SECRET_KEY is not configured.');
+    throw new Error('RECAPTCHA_SECRET_KEY (or shared CAPTCHA_SECRET_KEY) is not configured.');
   }
 
   const params = new URLSearchParams();
@@ -113,12 +145,7 @@ async function verifyRecaptchaStandard({ token, action, remoteip, env, fetchImpl
   }
 
   const result = await response.json();
-  const minScore = parseScore(env.RECAPTCHA_MIN_SCORE, 0.5);
-  const actionThresholds = parseActionThresholds(
-    env.RECAPTCHA_ACTION_THRESHOLDS,
-    String(env.RECAPTCHA_EXPECTED_ACTION || 'cij_form_submit').trim() || 'cij_form_submit',
-    minScore
-  );
+  const actionThresholds = parseActionThresholds(env.RECAPTCHA_ACTION_THRESHOLDS);
 
   if (!asBool(result.success)) {
     return {
@@ -144,7 +171,7 @@ async function verifyRecaptchaStandard({ token, action, remoteip, env, fetchImpl
   const thresholdResult = resolveThresholdForAction({
     action: receivedAction || action,
     actionThresholds,
-    fallbackThreshold: minScore
+    fallbackThreshold: 0.5
   });
 
   if (!thresholdResult.ok) {
@@ -180,12 +207,7 @@ async function verifyRecaptchaStandard({ token, action, remoteip, env, fetchImpl
 async function verifyRecaptchaEnterprise({ token, action, siteKey, remoteip, userAgent, env, fetchImpl }) {
   const apiKey = String(env.RECAPTCHA_ENTERPRISE_API_KEY || '').trim();
   const projectId = String(env.RECAPTCHA_ENTERPRISE_PROJECT_ID || '').trim();
-  const minScore = parseScore(env.RECAPTCHA_MIN_SCORE, 0.5);
-  const actionThresholds = parseActionThresholds(
-    env.RECAPTCHA_ACTION_THRESHOLDS,
-    String(env.RECAPTCHA_EXPECTED_ACTION || 'cij_form_submit').trim() || 'cij_form_submit',
-    minScore
-  );
+  const actionThresholds = parseActionThresholds(env.RECAPTCHA_ACTION_THRESHOLDS);
   const effectiveSiteKey = String(siteKey || env.RECAPTCHA_SITE_KEY || '').trim();
   const effectiveAction = String(action || '').trim();
 
@@ -257,7 +279,7 @@ async function verifyRecaptchaEnterprise({ token, action, siteKey, remoteip, use
   const thresholdResult = resolveThresholdForAction({
     action: receivedAction || effectiveAction,
     actionThresholds,
-    fallbackThreshold: minScore
+    fallbackThreshold: 0.5
   });
 
   if (!thresholdResult.ok) {
@@ -301,9 +323,9 @@ async function verifyRecaptcha({ token, action, formId, siteKey, remoteip, userA
 }
 
 async function verifyTurnstile({ token, remoteip, env, fetchImpl }) {
-  const secret = String(env.TURNSTILE_SECRET_KEY || '').trim();
+  const secret = String(env.CAPTCHA_SECRET_KEY || '').trim();
   if (!secret) {
-    throw new Error('TURNSTILE_SECRET_KEY is not configured.');
+    throw new Error('CAPTCHA_SECRET_KEY is not configured.');
   }
 
   const body = {
@@ -420,8 +442,11 @@ function createVerifier(options = {}) {
 }
 
 function startServer() {
-  const app = createApp();
-  const port = Number(process.env.PORT || 8787);
+  const configFile = loadConfigFile(path.join(__dirname, 'config.json'));
+  // env vars take precedence over config.json
+  const env = { ...configFile, ...process.env };
+  const app = createApp({ env });
+  const port = Number(env.PORT || 8787);
   app.listen(port, () => {
     console.log(`[verify-api] listening on http://localhost:${port}`);
   });

@@ -56,7 +56,6 @@ test('standard recaptcha success', async () => {
       CORS_ORIGINS: 'http://localhost:8000',
       RECAPTCHA_MODE: 'standard',
       RECAPTCHA_SECRET_KEY: 'test-secret',
-      RECAPTCHA_MIN_SCORE: '0.5',
       RECAPTCHA_ACTION_THRESHOLDS: 'cij_form_submit:0.5,newsletter_signup:0.8'
     },
     fetchImpl: createMockFetch(async (url) => {
@@ -86,8 +85,7 @@ test('enterprise recaptcha action mismatch fails', async () => {
       RECAPTCHA_MODE: 'enterprise',
       RECAPTCHA_ENTERPRISE_API_KEY: 'api-key',
       RECAPTCHA_ENTERPRISE_PROJECT_ID: 'proj-1',
-      RECAPTCHA_ACTION_THRESHOLDS: 'cij_form_submit:0.5',
-      RECAPTCHA_MIN_SCORE: '0.5'
+      RECAPTCHA_ACTION_THRESHOLDS: 'cij_form_submit:0.5'
     },
     fetchImpl: createMockFetch(async (url) => {
       assert.match(String(url), /recaptchaenterprise\.googleapis\.com/);
@@ -124,8 +122,7 @@ test('request actionThresholds override enforces threshold by action', async () 
     env: {
       CORS_ORIGINS: 'http://localhost:8000',
       RECAPTCHA_MODE: 'standard',
-      RECAPTCHA_SECRET_KEY: 'test-secret',
-      RECAPTCHA_MIN_SCORE: '0.1'
+      RECAPTCHA_SECRET_KEY: 'test-secret'
     },
     fetchImpl: createMockFetch(async () => ({
       ok: true,
@@ -151,7 +148,7 @@ test('turnstile failure returns invalid reason', async () => {
   await withServer({
     env: {
       CORS_ORIGINS: 'http://localhost:8000',
-      TURNSTILE_SECRET_KEY: 'turnstile-secret'
+      CAPTCHA_SECRET_KEY: 'turnstile-secret'
     },
     fetchImpl: createMockFetch(async (url) => {
       assert.match(String(url), /challenges\.cloudflare\.com\/turnstile/);
@@ -168,6 +165,32 @@ test('turnstile failure returns invalid reason', async () => {
 
     assert.equal(result.status, 200);
     assert.equal(result.json.success, false);
+    assert.equal(result.json.provider, 'turnstile');
+  });
+});
+
+test('turnstile uses shared CAPTCHA_SECRET_KEY fallback', async () => {
+  await withServer({
+    env: {
+      CORS_ORIGINS: 'http://localhost:8000',
+      CAPTCHA_SECRET_KEY: 'shared-secret'
+    },
+    fetchImpl: createMockFetch(async (_url, options) => {
+      const body = JSON.parse(String(options.body || '{}'));
+      assert.equal(body.secret, 'shared-secret');
+      return {
+        ok: true,
+        json: async () => ({ success: true })
+      };
+    })
+  }, async (baseUrl) => {
+    const result = await postJson(baseUrl, {
+      provider: 'turnstile',
+      token: 'token-shared'
+    });
+
+    assert.equal(result.status, 200);
+    assert.equal(result.json.success, true);
     assert.equal(result.json.provider, 'turnstile');
   });
 });

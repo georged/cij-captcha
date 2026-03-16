@@ -73,11 +73,11 @@ This release supports:
 
 Instead of the solution configuration page, administrators can use **Plugin Registration Tool** and configure **secureConfig** and **unsecureConfig** values:
 
-- reCAPTCHA unsecure config: `provider=recaptcha;minscore=0.7`
-- reCAPTCHA unsecure config (legacy): `provider=recaptcha;minscore=0.7`
-- reCAPTCHA unsecure config (recommended): `provider=recaptcha;actionthresholds=cij_form_submit:0.5,newsletter_signup:0.8`
-- Turnstile unsecure config: `provider=turnstile`
-- Secure config: provider secret key
+- reCAPTCHA (standard) unsecure config: `{"provider":"recaptcha","recaptchaMode":"standard","actionThresholds":{"cij_form_submit":0.5}}`
+- reCAPTCHA (enterprise) unsecure config: `{"provider":"recaptcha","recaptchaMode":"enterprise","actionThresholds":{"cij_form_submit":0.5}}`
+- Turnstile unsecure config: `{"provider":"turnstile"}`
+- Turnstile or reCAPTCHA (standard) secure config: `{"secretKey":"YOUR_SECRET_KEY"}`
+- reCAPTCHA (enterprise) secure config: `{"secretKey":"YOUR_SECRET_KEY","enterpriseApiKey":"YOUR_ENTERPRISE_API_KEY","enterpriseProjectId":"YOUR_GCP_PROJECT_ID","enterpriseSiteKey":"YOUR_ENTERPRISE_SITE_KEY"}`
 
 ### Client-side script
 
@@ -190,9 +190,7 @@ cp .env.sample .env
 
 Set `.env` values:
 
-- `RECAPTCHA_SECRET_KEY` for Google reCAPTCHA v3
-- `TURNSTILE_SECRET_KEY` for Cloudflare Turnstile
-- `RECAPTCHA_MIN_SCORE` optional, defaults to `0.5`
+- `CAPTCHA_SECRET_KEY` shared secret key used by both Google reCAPTCHA v3 and Cloudflare Turnstile
 - `RECAPTCHA_ACTION_THRESHOLDS` optional action-score pairs, e.g. `cij_form_submit:0.5,newsletter_signup:0.8`
 - `CORS_ORIGINS` comma-separated origins that can call this API
 
@@ -233,15 +231,29 @@ Output DLL:
 
 - `plugin/bin/Release/net462/CijCaptcha.dll`
 
+Deploy updated config-page web resource + solution + plugin assembly in one command:
+
+```bash
+./scripts/deploy-dataverse.sh
+```
+
+This script does the following in order:
+- builds the plugin in Release
+- unpacks `artifacts/CIJ_Captcha.zip`, updates the config-page web resource, then repacks
+- imports and publishes the Dataverse solution with plugin activation (`--activate-plugins`)
+- pushes the plugin assembly by plugin id
+
 Register with Plugin Registration Tool:
 
 1. Open Plugin Registration Tool and connect to your Dataverse environment.
 2. Register `CijCaptcha.dll` as a new assembly (Sandbox).
 3. Register step for message `msdynmkt_validateformsubmission` (Synchronous, Post-operation).
 4. Set step configuration:
-  - Unsecure: `provider=recaptcha;actionthresholds=cij_form_submit:0.5` (recommended) or `provider=recaptcha;minscore=0.7` (legacy)
-  - Unsecure for Turnstile: `provider=turnstile`
-   - Secure: CAPTCHA secret key
+  - Unsecure (reCAPTCHA standard): `{"provider":"recaptcha","recaptchaMode":"standard","actionThresholds":{"cij_form_submit":0.5}}`
+  - Unsecure (reCAPTCHA enterprise): `{"provider":"recaptcha","recaptchaMode":"enterprise","actionThresholds":{"cij_form_submit":0.5}}`
+  - Unsecure (Turnstile): `{"provider":"turnstile"}`
+  - Secure (standard): `{"secretKey":"YOUR_SECRET_KEY"}`
+  - Secure (enterprise): `{"secretKey":"YOUR_SECRET_KEY","enterpriseApiKey":"YOUR_ENTERPRISE_API_KEY","enterpriseProjectId":"YOUR_GCP_PROJECT_ID","enterpriseSiteKey":"YOUR_ENTERPRISE_SITE_KEY"}`
 
 > [!IMPORTANT]
 >

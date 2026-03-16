@@ -22,4 +22,5 @@ artifacts
 test.html
 verify-api/node_modules
 verify-api/.env
+verify-api/config.json
 .vscode

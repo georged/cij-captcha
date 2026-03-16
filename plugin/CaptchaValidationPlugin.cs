@@ -6,8 +6,6 @@ using System.Net.Http;
 using System.Runtime.Serialization;
 using System.Runtime.Serialization.Json;
 using System.Text;
-using System.Text.Json.Serialization;
-using System.Globalization;
 using Microsoft.Xrm.Sdk;
 
 namespace Georged.Cij.Captcha
@@ -47,13 +45,13 @@ namespace Georged.Cij.Captcha
     ///
     /// Configuration — ALL sensitive values are stored in Secure Config only.
     /// ───────────────────────────────────────────────────────────────────────
-    ///   Unsecure Config  (non-sensitive, human-readable settings):
-    ///     provider=recaptcha            — use Google reCAPTCHA v3
-    ///     provider=recaptcha;minscore=0.7  — reCAPTCHA v3 with custom score threshold
-    ///     provider=turnstile            — use Cloudflare Turnstile
+    ///   Unsecure Config (non-sensitive JSON):
+    ///     {"provider":"recaptcha","recaptchaMode":"standard","actionThresholds":{"cij_form_submit":0.5}}
+    ///     {"provider":"recaptcha","recaptchaMode":"enterprise","actionThresholds":{"cij_form_submit":0.7}}
+    ///     {"provider":"turnstile"}
     ///
-    ///   Secure Config  (stored encrypted by Dataverse):
-    ///     secret=<captcha secret key>;apikey=<enterprise api key>;projectid=<gcp project id>
+    ///   Secure Config (stored encrypted by Dataverse, JSON):
+    ///     {"secretKey":"...","enterpriseApiKey":"...","enterpriseProjectId":"...","enterpriseSiteKey":"..."}
     ///
     /// The plugin will throw an InvalidPluginExecutionException on startup if
     /// the secure config (secret key) is missing, to fail fast rather than
@@ -77,11 +75,9 @@ namespace Georged.Cij.Captcha
         private readonly CaptchaProvider _provider;
         private readonly string          _secretKey;
         private readonly string          _enterpriseApiKey;
-        private readonly double          _minScore;
         private readonly RecaptchaMode   _recaptchaMode;
         private readonly string          _recaptchaProjectId;
         private readonly string          _recaptchaSiteKey;
-        private readonly string          _recaptchaExpectedAction;
         private readonly Dictionary<string, double> _actionThresholds;
         private readonly string          _validationFailureMessage;
 
@@ -93,58 +89,94 @@ namespace Georged.Cij.Captcha
 
         /// <summary>
         /// Constructor called by Dataverse when plug-in config strings are present.
+        /// Both configs are JSON objects.
         /// </summary>
         /// <param name="unsecureConfig">
-        ///   Non-sensitive settings, e.g. "provider=recaptcha;minscore=0.5"
-        ///   or "provider=turnstile".
+        ///   Non-sensitive settings as JSON, e.g.:
+        ///   {"provider":"recaptcha","recaptchaMode":"enterprise","actionThresholds":{"cij_form_submit":0.5}}
         /// </param>
         /// <param name="secureConfig">
-        ///   Sensitive provider values stored encrypted by Dataverse.
-        ///   Supports secret/apikey/projectid key-value pairs.
+        ///   Sensitive provider values as JSON, e.g.:
+        ///   {"secretKey":"...","enterpriseApiKey":"...","enterpriseProjectId":"...","enterpriseSiteKey":"..."}
         /// </param>
         public CaptchaValidationPlugin(string unsecureConfig, string secureConfig)
         {
             if (string.IsNullOrWhiteSpace(secureConfig))
                 throw new InvalidPluginExecutionException(
                     "[CijCaptcha] Secure Config is empty. " +
-                    "Provide the CAPTCHA secret key in the Secure Configuration field " +
+                    "Provide the CAPTCHA secret key (JSON) in the Secure Configuration field " +
                     "of the Plugin Registration Tool step.");
 
-            _provider = ParseProvider(unsecureConfig);
-            _minScore = ParseMinScore(unsecureConfig);
-            _recaptchaMode = ParseRecaptchaMode(unsecureConfig);
-            _recaptchaExpectedAction = ParseConfigValue(unsecureConfig, "expectedaction");
-            _actionThresholds = ParseActionThresholds(unsecureConfig, _recaptchaExpectedAction, _minScore);
-            _validationFailureMessage = ParseConfigValue(unsecureConfig, "failuremessage");
+            // ── Parse unsecure config (JSON) ───────────────────────────────────
+            UnsecureConfigJson unsecure;
+            try
+            {
+                unsecure = DeserializeConfig<UnsecureConfigJson>(unsecureConfig ?? "{}");
+            }
+            catch (Exception ex)
+            {
+                throw new InvalidPluginExecutionException(
+                    "[CijCaptcha] Unsecure Config is not valid JSON. " + ex.Message);
+            }
 
-            var secureValues = ParseSecureConfigValues(secureConfig);
-            _secretKey = secureValues.secretKey;
-            _enterpriseApiKey = secureValues.enterpriseApiKey;
-            _recaptchaProjectId = secureValues.recaptchaProjectId;
-            _recaptchaSiteKey = secureValues.recaptchaSiteKey;
+            _provider   = ParseProvider(unsecure.Provider);
+            _recaptchaMode = ParseRecaptchaMode(unsecure.RecaptchaMode);
+            _validationFailureMessage = string.IsNullOrWhiteSpace(unsecure.FailureMessage)
+                ? null : unsecure.FailureMessage.Trim();
+
+            if (unsecure.ActionThresholds != null && unsecure.ActionThresholds.Count > 0)
+            {
+                _actionThresholds = new Dictionary<string, double>(StringComparer.Ordinal);
+                foreach (var kvp in unsecure.ActionThresholds)
+                {
+                    if (!string.IsNullOrWhiteSpace(kvp.Key))
+                        _actionThresholds[kvp.Key.Trim()] = Math.Max(0.0, Math.Min(1.0, kvp.Value));
+                }
+            }
+            else
+            {
+                _actionThresholds = new Dictionary<string, double>(StringComparer.Ordinal)
+                    { ["cij_form_submit"] = 0.5 };
+            }
+
+            // ── Parse secure config (JSON) ─────────────────────────────────────
+            SecureConfigJson secure;
+            try
+            {
+                secure = DeserializeConfig<SecureConfigJson>(secureConfig);
+            }
+            catch (Exception ex)
+            {
+                throw new InvalidPluginExecutionException(
+                    "[CijCaptcha] Secure Config is not valid JSON. " + ex.Message);
+            }
+
+            _secretKey           = secure.SecretKey?.Trim();
+            _enterpriseApiKey    = secure.EnterpriseApiKey?.Trim();
+            _recaptchaProjectId  = secure.EnterpriseProjectId?.Trim();
+            _recaptchaSiteKey    = secure.EnterpriseSiteKey?.Trim();
 
             if (string.IsNullOrWhiteSpace(_secretKey))
                 throw new InvalidPluginExecutionException(
                     "[CijCaptcha] Missing CAPTCHA secret key. " +
-                    "Set secure config with 'secretkey=<site-secret-value>'.");
+                    "Set secure config JSON with \"secretKey\".");
 
             if (_provider == CaptchaProvider.GoogleRecaptchaV3 && _recaptchaMode == RecaptchaMode.Enterprise)
             {
                 if (string.IsNullOrWhiteSpace(_enterpriseApiKey))
                     throw new InvalidPluginExecutionException(
                         "[CijCaptcha] Missing reCAPTCHA Enterprise API key. " +
-                        "Set secure config with 'apikey=<api-key-value>'.");
+                        "Set secure config JSON with \"enterpriseApiKey\".");
 
                 if (string.IsNullOrWhiteSpace(_recaptchaProjectId))
                     throw new InvalidPluginExecutionException(
-                        "[CijCaptcha] Missing Enterprise project id in secure config. " +
-                        "Set secure config with 'projectid=<gcp-project-id>'.");
+                        "[CijCaptcha] Missing Enterprise project id. " +
+                        "Set secure config JSON with \"enterpriseProjectId\".");
 
                 if (string.IsNullOrWhiteSpace(_recaptchaSiteKey))
                     throw new InvalidPluginExecutionException(
-                        "[CijCaptcha] Missing Enterprise site key in secure config. " +
-                        "Set secure config with 'sitekey=<public-site-key>'.");
-
+                        "[CijCaptcha] Missing Enterprise site key. " +
+                        "Set secure config JSON with \"enterpriseSiteKey\".");
             }
         }
 
@@ -483,79 +515,21 @@ namespace Georged.Cij.Captcha
             return CaptchaProvider.GoogleRecaptchaV3;
         }
 
-        private static RecaptchaMode ParseRecaptchaMode(string config)
+        private static RecaptchaMode ParseRecaptchaMode(string value)
         {
-            var value = ParseConfigValue(config, "recaptchamode");
             if (string.Equals(value, "enterprise", StringComparison.OrdinalIgnoreCase))
-            {
                 return RecaptchaMode.Enterprise;
-            }
-
             return RecaptchaMode.Standard;
         }
 
-        private static string ParseConfigValue(string config, string key)
+        private static T DeserializeConfig<T>(string json)
         {
-            if (string.IsNullOrWhiteSpace(config)) return null;
-
-            foreach (var part in config.Split(';'))
+            var settings = new DataContractJsonSerializerSettings { UseSimpleDictionaryFormat = true };
+            var serializer = new DataContractJsonSerializer(typeof(T), settings);
+            using (var ms = new MemoryStream(Encoding.UTF8.GetBytes(json ?? "{}")))
             {
-                var kv = part.Trim().Split('=');
-                if (kv.Length < 2) continue;
-
-                if (kv[0].Trim().Equals(key, StringComparison.OrdinalIgnoreCase))
-                {
-                    return DecodeConfigValue(string.Join("=", kv.Skip(1)).Trim());
-                }
+                return (T)serializer.ReadObject(ms);
             }
-
-            return null;
-        }
-
-        private static string DecodeConfigValue(string value)
-        {
-            if (string.IsNullOrWhiteSpace(value)) return value;
-
-            try
-            {
-                return Uri.UnescapeDataString(value);
-            }
-            catch
-            {
-                return value;
-            }
-        }
-
-        private static (string secretKey, string enterpriseApiKey, string recaptchaProjectId, string recaptchaSiteKey) ParseSecureConfigValues(string secureConfig)
-        {
-            var raw = (secureConfig ?? string.Empty).Trim();
-            if (!raw.Contains("="))
-            {
-                return (raw, raw, null, null);
-            }
-
-            string secret = null;
-            string apiKey = null;
-            string projectId = null;
-            string siteKey = null;
-
-            foreach (var part in raw.Split(';'))
-            {
-                var kv = part.Trim().Split('=');
-                if (kv.Length < 2) continue;
-
-                var key = kv[0].Trim().ToLowerInvariant();
-                var value = string.Join("=", kv.Skip(1)).Trim();
-                if (key == "secret" || key == "secretkey") secret = value;
-                if (key == "apikey" || key == "enterpriseapikey")
-                {
-                    apiKey = value;
-                }
-                if (key == "projectid" || key == "recaptchaprojectid") projectId = value;
-                if (key == "sitekey" || key == "recaptchasitekey" || key == "enterprisesitekey" || key == "publicsitekey") siteKey = value;
-            }
-
-            return (secret, apiKey, projectId, siteKey);
         }
 
         private static string EscapeJson(string value)
@@ -565,61 +539,6 @@ namespace Georged.Cij.Captcha
                 .Replace("\"", "\\\"");
         }
 
-        private static double ParseMinScore(string config)
-        {
-            if (string.IsNullOrWhiteSpace(config)) return 0.5;
-
-            foreach (var part in config.Split(';'))
-            {
-                var kv = part.Trim().Split('=');
-                if (kv.Length == 2 &&
-                    kv[0].Trim().Equals("minscore", StringComparison.OrdinalIgnoreCase) &&
-                    double.TryParse(kv[1].Trim(), out double score))
-                {
-                    return Math.Max(0.0, Math.Min(1.0, score));
-                }
-            }
-
-            return 0.5;
-        }
-
-        private static Dictionary<string, double> ParseActionThresholds(
-            string config,
-            string fallbackAction,
-            double fallbackThreshold)
-        {
-            var thresholds = new Dictionary<string, double>(StringComparer.Ordinal);
-            var raw = ParseConfigValue(config, "actionthresholds");
-
-            if (!string.IsNullOrWhiteSpace(raw))
-            {
-                foreach (var entry in raw.Split(','))
-                {
-                    var pair = entry.Split(':');
-                    if (pair.Length < 2) continue;
-
-                    var action = pair[0].Trim();
-                    var thresholdRaw = pair[1].Trim();
-                    if (string.IsNullOrWhiteSpace(action)) continue;
-
-                    if (double.TryParse(thresholdRaw, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed))
-                    {
-                        thresholds[action] = Math.Max(0.0, Math.Min(1.0, parsed));
-                    }
-                }
-            }
-
-            if (thresholds.Count == 0)
-            {
-                var action = string.IsNullOrWhiteSpace(fallbackAction)
-                    ? "cij_form_submit"
-                    : fallbackAction;
-
-                thresholds[action] = Math.Max(0.0, Math.Min(1.0, fallbackThreshold));
-            }
-
-            return thresholds;
-        }
 
         // ── JSON helpers (DataContractJsonSerializer — no extra dependencies) ──
 
@@ -646,22 +565,56 @@ namespace Georged.Cij.Captcha
     }
 
     // ── Data contracts ─────────────────────────────────────────────────────────
+    // ── Plugin config POCOs ────────────────────────────────────────────────
 
+    [DataContract]
+    internal sealed class UnsecureConfigJson
+    {
+        [DataMember(Name = "provider")]
+        public string Provider { get; set; }
+
+        [DataMember(Name = "recaptchaMode")]
+        public string RecaptchaMode { get; set; }
+
+        [DataMember(Name = "actionThresholds")]
+        public Dictionary<string, double> ActionThresholds { get; set; }
+
+        [DataMember(Name = "failureMessage")]
+        public string FailureMessage { get; set; }
+    }
+
+    [DataContract]
+    internal sealed class SecureConfigJson
+    {
+        [DataMember(Name = "secretKey")]
+        public string SecretKey { get; set; }
+
+        [DataMember(Name = "enterpriseApiKey")]
+        public string EnterpriseApiKey { get; set; }
+
+        [DataMember(Name = "enterpriseProjectId")]
+        public string EnterpriseProjectId { get; set; }
+
+        [DataMember(Name = "enterpriseSiteKey")]
+        public string EnterpriseSiteKey { get; set; }
+    }
+
+    // ── Provider response contracts ───────────────────────────────────────────
     public sealed class FormSubmissionRequest
     {
-        [JsonPropertyName("PublishedFormUrl")]
+        [DataMember(Name = "PublishedFormUrl")]
         public string PublishedFormUrl { get; set; }
 
-        [JsonPropertyName("Fields")]
+        [DataMember(Name = "Fields")]
         public List<FormField> Fields { get; set; }
     }
 
     public sealed class FormField
     {
-        [JsonPropertyName("Key")]
+        [DataMember(Name = "Key")]
         public string Key { get; set; }
 
-        [JsonPropertyName("Value")]
+        [DataMember(Name = "Value")]
         public string Value { get; set; }
     }
 

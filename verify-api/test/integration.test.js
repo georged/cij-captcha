@@ -148,7 +148,7 @@ test('turnstile failure returns invalid reason', async () => {
   await withServer({
     env: {
       CORS_ORIGINS: 'http://localhost:8000',
-      CAPTCHA_SECRET_KEY: 'turnstile-secret'
+      TURNSTILE_SECRET_KEY: 'turnstile-secret'
     },
     fetchImpl: createMockFetch(async (url) => {
       assert.match(String(url), /challenges\.cloudflare\.com\/turnstile/);
@@ -169,15 +169,15 @@ test('turnstile failure returns invalid reason', async () => {
   });
 });
 
-test('turnstile uses shared CAPTCHA_SECRET_KEY fallback', async () => {
+test('turnstile uses TURNSTILE_SECRET_KEY', async () => {
   await withServer({
     env: {
       CORS_ORIGINS: 'http://localhost:8000',
-      CAPTCHA_SECRET_KEY: 'shared-secret'
+      TURNSTILE_SECRET_KEY: 'turnstile-secret'
     },
     fetchImpl: createMockFetch(async (_url, options) => {
       const body = JSON.parse(String(options.body || '{}'));
-      assert.equal(body.secret, 'shared-secret');
+      assert.equal(body.secret, 'turnstile-secret');
       return {
         ok: true,
         json: async () => ({ success: true })

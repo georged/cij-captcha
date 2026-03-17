@@ -1,4 +1,4 @@
-const { createVerifier } = require('../../server');
+const { createVerifier } = require('../server');
 
 const verifier = createVerifier();
 

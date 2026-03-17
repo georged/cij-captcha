@@ -301,7 +301,7 @@
     <form id="config-form" class="grid" autocomplete="off">
       <div id="loading-panel" class="loading-panel visible" aria-live="polite">
         <span class="spinner" aria-hidden="true"></span>
-        <span>Loading settings from Dataverse...</span>
+        <span>Loading settings from Dataverse...(First load may take couple minutes)</span>
       </div>
 
       <div id="settings-fields" class="settings-fields">
@@ -1206,7 +1206,13 @@
           actionThresholds: actionThresholds
         };
 
-        if (secretKey) config.secretKey = secretKey;
+        if (secretKey) {
+          if (provider === 'turnstile') {
+            config.turnstileSecretKey = secretKey;
+          } else {
+            config.recaptchaSecretKey = secretKey;
+          }
+        }
 
         if (provider === 'recaptcha' && recaptchaMode === 'enterprise') {
           if (projectId) config.enterpriseProjectId = projectId;

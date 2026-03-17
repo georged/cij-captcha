@@ -32,8 +32,8 @@
  *     mode?: 'standard'|'enterprise'        // default 'standard'
  *   }
  *   preSubmit?: {
- *     enabled?: boolean                     // default false
- *     verifyEndpoint?: string               // required when enabled
+  *     verifyEndpoint?: string               // required when preSubmit is present
+  *     enabled?: boolean                     // optional; default true when preSubmit present, false when omitted
  *     timeout?: number                      // default 8000
  *     failureMessage?: string               // optional override for server validation failures
  *   }
@@ -112,13 +112,28 @@
 
   function normalizePreSubmitSettings(input, defaults) {
     var source = input || {};
+    
+    // If input is not provided at all, preSubmit is disabled
+    if (!input) {
+      return {
+        enabled: false,
+        verifyEndpoint: '',
+        timeout: defaults.timeout || 8000,
+        failureMessage: '',
+        fallbackFailureMessage: defaults.fallbackFailureMessage || defaults.failureMessage || ''
+      };
+    }
+    
+    // If input IS provided, it's enabled by default unless explicitly set to false (backward compat)
+    var isEnabled = input.hasOwnProperty('enabled') ? !!input.enabled : true;
+    
     var timeout = defaults.timeout;
     if (typeof source.timeout === 'number' && source.timeout > 0) {
       timeout = source.timeout;
     }
 
     return {
-      enabled: !!source.enabled,
+      enabled: isEnabled,
       verifyEndpoint: String(source.verifyEndpoint || '').trim(),
       timeout: timeout,
       failureMessage: typeof source.failureMessage === 'string'

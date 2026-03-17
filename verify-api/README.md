@@ -26,7 +26,8 @@ Copy `config.json.sample` to `config.json` and fill in your values. The format m
   "actionThresholds": {
     "cij_form_submit": 0.5
   },
-  "secretKey": "YOUR_RECAPTCHA_SECRET_KEY",
+  "recaptchaSecretKey": "YOUR_RECAPTCHA_SECRET_KEY",
+  "turnstileSecretKey": "YOUR_TURNSTILE_SECRET_KEY",
   "enterpriseProjectId": "",
   "enterpriseApiKey": "",
   "enterpriseSiteKey": "",
@@ -35,7 +36,7 @@ Copy `config.json.sample` to `config.json` and fill in your values. The format m
 ```
 
 `recaptchaMode` is `"standard"` (default) or `"enterprise"`. Enterprise requires `enterpriseProjectId`, `enterpriseApiKey`, and `enterpriseSiteKey`.
-`secretKey` is the shared provider secret key format used by the plugin/config page and is used as a fallback by verify-api for both reCAPTCHA and Turnstile.
+`recaptchaSecretKey` is the reCAPTCHA v3 secret key. `turnstileSecretKey` is the Cloudflare Turnstile secret key.
 
 ### Environment variables
 
@@ -43,9 +44,9 @@ Copy `config.json.sample` to `config.json` and fill in your values. The format m
 |---|---|---|
 | `PORT` | `8787` | Listening port |
 | `CORS_ORIGINS` | *(all)* | Comma-separated origin allowlist. Empty = allow all. |
-| `RECAPTCHA_MODE` | `standard` | `standard` or `enterprise` |
-| `CAPTCHA_SECRET_KEY` | | Shared secret key fallback for both providers |
 | `RECAPTCHA_SECRET_KEY` | | reCAPTCHA v3 secret key |
+| `TURNSTILE_SECRET_KEY` | | Cloudflare Turnstile secret key |
+| `RECAPTCHA_MODE` | `standard` | `standard` or `enterprise` |
 | `RECAPTCHA_ACTION_THRESHOLDS` | `cij_form_submit:0.5` | `action:threshold` pairs, comma-separated |
 | `RECAPTCHA_ENTERPRISE_API_KEY` | | Enterprise API key |
 | `RECAPTCHA_ENTERPRISE_PROJECT_ID` | | Google Cloud project ID |
@@ -79,3 +80,71 @@ Response:
 
 - Valid token: `{ "success": true, ... }`
 - Invalid token: `{ "success": false, "reason": "..." }`
+
+## Deploy to Azure Functions
+
+The repository includes a deployment script:
+
+- `scripts/deploy-verify-api-azure.sh`
+
+It can provision a **Flex Consumption** Function App (Node.js 20), apply app settings, package `verify-api`, and deploy via zip.
+
+### Prerequisites
+
+- Azure CLI (`az`) installed and logged in
+- `zip` and `rsync`
+
+### Deploy (provision + code)
+
+From repo root:
+
+```bash
+./scripts/deploy-verify-api-azure.sh \
+  --subscription "<subscription-id-or-name>" \
+  --resource-group "rg-cij-captcha" \
+  --location "eastus2" \
+  --app-name "cij-captcha-verify-api-prod" \
+  --storage-name "cijcaptchaverifysa001" \
+  --cors-origins "https://assets1-usa.mkt.dynamics.com" \
+  --recaptcha-secret-key "<recaptcha-secret>" \
+  --turnstile-secret-key "<turnstile-secret>"
+```
+
+### Deploy code only (existing Function App)
+
+```bash
+./scripts/deploy-verify-api-azure.sh \
+  --subscription "<subscription-id-or-name>" \
+  --resource-group "rg-cij-captcha" \
+  --app-name "cij-captcha-verify-api-prod" \
+  --skip-provision
+```
+
+### Settings
+
+The script accepts CLI arguments and/or environment variables for API settings:
+
+- `CORS_ORIGINS`
+- `RECAPTCHA_SECRET_KEY`
+- `TURNSTILE_SECRET_KEY`
+- `RECAPTCHA_MODE`
+- `RECAPTCHA_ACTION_THRESHOLDS`
+- `RECAPTCHA_ENTERPRISE_API_KEY`
+- `RECAPTCHA_ENTERPRISE_PROJECT_ID`
+- `RECAPTCHA_SITE_KEY`
+
+Example:
+
+```bash
+export RECAPTCHA_MODE=standard
+export RECAPTCHA_ACTION_THRESHOLDS="cij_form_submit:0.5"
+export RECAPTCHA_SECRET_KEY="<recaptcha-secret>"
+export TURNSTILE_SECRET_KEY="<turnstile-secret>"
+
+./scripts/deploy-verify-api-azure.sh \
+  --subscription "<subscription-id-or-name>" \
+  --resource-group "rg-cij-captcha" \
+  --location "eastus2" \
+  --app-name "cij-captcha-verify-api-prod" \
+  --storage-name "cijcaptchaverifysa001"
+```

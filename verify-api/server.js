@@ -9,7 +9,7 @@ dotenv.config({ path: path.join(__dirname, '.env') });
 /**
  * Loads verify-api/config.json and maps its keys to the equivalent env var names.
  * Keys in config.json (same format produced by the plugin config page "Copy for verify-api"):
- *   recaptchaMode, actionThresholds, secretKey, enterpriseProjectId,
+ *   recaptchaMode, actionThresholds, recaptchaSecretKey, turnstileSecretKey, enterpriseProjectId,
  *   enterpriseApiKey, enterpriseSiteKey, corsOrigins
  * Env vars always take precedence over config.json values.
  */
@@ -20,7 +20,8 @@ function loadConfigFile(configPath) {
     const env = {};
     if (config.recaptchaMode != null) env.RECAPTCHA_MODE = String(config.recaptchaMode);
     if (config.actionThresholds != null) env.RECAPTCHA_ACTION_THRESHOLDS = config.actionThresholds;
-    if (config.secretKey != null) env.CAPTCHA_SECRET_KEY = String(config.secretKey);
+    if (config.recaptchaSecretKey != null) env.RECAPTCHA_SECRET_KEY = String(config.recaptchaSecretKey);
+    if (config.turnstileSecretKey != null) env.TURNSTILE_SECRET_KEY = String(config.turnstileSecretKey);
     if (config.enterpriseProjectId != null) env.RECAPTCHA_ENTERPRISE_PROJECT_ID = String(config.enterpriseProjectId);
     if (config.enterpriseApiKey != null) env.RECAPTCHA_ENTERPRISE_API_KEY = String(config.enterpriseApiKey);
     if (config.enterpriseSiteKey != null) env.RECAPTCHA_SITE_KEY = String(config.enterpriseSiteKey);
@@ -122,9 +123,9 @@ function validateRequestBody(body) {
 }
 
 async function verifyRecaptchaStandard({ token, action, remoteip, env, fetchImpl }) { // formId reserved for future per-form policy
-  const secret = String(env.RECAPTCHA_SECRET_KEY || env.CAPTCHA_SECRET_KEY || '').trim();
+  const secret = String(env.RECAPTCHA_SECRET_KEY || '').trim();
   if (!secret) {
-    throw new Error('RECAPTCHA_SECRET_KEY (or shared CAPTCHA_SECRET_KEY) is not configured.');
+    throw new Error('RECAPTCHA_SECRET_KEY is not configured.');
   }
 
   const params = new URLSearchParams();
@@ -323,9 +324,9 @@ async function verifyRecaptcha({ token, action, formId, siteKey, remoteip, userA
 }
 
 async function verifyTurnstile({ token, remoteip, env, fetchImpl }) {
-  const secret = String(env.CAPTCHA_SECRET_KEY || '').trim();
+  const secret = String(env.TURNSTILE_SECRET_KEY || '').trim();
   if (!secret) {
-    throw new Error('CAPTCHA_SECRET_KEY is not configured.');
+    throw new Error('TURNSTILE_SECRET_KEY is not configured.');
   }
 
   const body = {

@@ -1,5 +1,6 @@
 {
-  "secretKey": "",
+  "recaptchaSecretKey": "",
+  "turnstileSecretKey": "",
   "recaptchaMode": "standard",
   "actionThresholds": {
     "cij_form_submit": 0.5

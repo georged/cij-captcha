@@ -779,6 +779,20 @@
         saveBtn.disabled = !isLoaded || state.isSaving;
       }
 
+      function setInputsLoadFailed(message) {
+        state.isLoaded = false;
+
+        var settingsFields = document.getElementById('settings-fields');
+        var loadingPanel = document.getElementById('loading-panel');
+        var saveBtn = document.getElementById('save-btn');
+
+        settingsFields.classList.remove('visible');
+        loadingPanel.classList.remove('visible');
+        saveBtn.disabled = true;
+
+        setStatus('Load failed: ' + message);
+      }
+
       function getGlobalContext() {
         if (typeof GetGlobalContext === 'function') {
           return GetGlobalContext();
@@ -942,51 +956,29 @@
           'sdkmessageprocessingstepid',
           'configuration',
           'statecode',
-          'statuscode',
           '_sdkmessageid_value',
           '_eventhandler_value',
           '_sdkmessageprocessingstepsecureconfigid_value'
         ];
 
-        var activeSteps = await queryAll(
+        var steps = await queryAll(
           'sdkmessageprocessingstep',
           selectColumns,
           '_eventhandler_value eq ' + normalizedPluginTypeId +
           ' and _sdkmessageid_value eq ' + normalizedSdkMessageId +
           ' and statecode eq 0',
-          25
+          2
         );
 
-        if (activeSteps.length === 1) {
-          return {
-            step: activeSteps[0],
-            warning: null
-          };
+        if (!steps.length) {
+          throw new Error('No active sdkmessageprocessingstep found for the selected plugin and message.');
         }
 
-        if (activeSteps.length > 1) {
-          return {
-            step: activeSteps[0],
-            warning: 'Multiple active plugin steps were found. Using the first active step returned by Dataverse.'
-          };
+        if (steps.length > 1) {
+          throw new Error('Multiple active sdkmessageprocessingstep records were found for this plugin and message. Expected exactly one.');
         }
 
-        var allSteps = await queryAll(
-          'sdkmessageprocessingstep',
-          selectColumns,
-          '_eventhandler_value eq ' + normalizedPluginTypeId +
-          ' and _sdkmessageid_value eq ' + normalizedSdkMessageId,
-          25
-        );
-
-        if (!allSteps.length) {
-          throw new Error('No sdkmessageprocessingstep found for the selected plugin and message. Register a plugin step for msdynmkt_validateformsubmission first.');
-        }
-
-        return {
-          step: allSteps[0],
-          warning: 'No active plugin step was found. Loaded the first inactive matching step. Activate the step to enforce validation at runtime.'
-        };
+        return steps[0];
       }
 
       async function loadSecureConfig(secureConfigId) {
@@ -1008,8 +1000,7 @@
 
         var pluginType = await resolvePluginType();
         var sdkMessage = await resolveSdkMessage();
-        var stepResolution = await resolveStep(pluginType.plugintypeid, sdkMessage.sdkmessageid);
-        var step = stepResolution.step;
+        var step = await resolveStep(pluginType.plugintypeid, sdkMessage.sdkmessageid);
 
         state.stepId = normalizeGuid(step.sdkmessageprocessingstepid);
         state.secureConfigId = normalizeGuid(step._sdkmessageprocessingstepsecureconfigid_value);
@@ -1045,11 +1036,7 @@
         renderSecretVisibility();
         renderEnterpriseApiKeyVisibility();
         setInputsLoaded(true);
-        if (stepResolution.warning) {
-          setStatus('Loaded with warning: ' + stepResolution.warning);
-        } else {
-          setStatus('Loaded current configuration.');
-        }
+        setStatus('Loaded current configuration.');
       }
 
       async function saveConfiguration() {
@@ -1212,7 +1199,7 @@
         } catch (error) {
           var message = error && error.message ? error.message : String(error);
           debug('Initialization failed', error);
-          setStatus('Load failed: ' + message);
+          setInputsLoadFailed(message);
         }
       }
 

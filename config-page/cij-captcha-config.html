@@ -655,6 +655,7 @@
         var provider = document.getElementById('provider').value;
         var recaptchaMode = getRecaptchaMode();
         var snippetAction = document.getElementById('snippet-action').value.trim() || 'cij_form_submit';
+        var snippetActionEscaped = String(snippetAction).replace(/'/g, "\\'");
         var normalizedPairs = normalizeActionThresholdPairs(state.actionThresholdPairs);
         var siteKey = document.getElementById('snippet-sitekey').value.trim() || 'YOUR_SITE_KEY';
         var verifyEndpoint = document.getElementById('snippet-endpoint').value.trim() || 'https://YOUR_FUNCTION_HOST/api/captcha/verify';
@@ -672,9 +673,9 @@
         lines.push("  siteKey: '" + siteKey + "',");
 
         if (provider === 'recaptcha') {
-          lines.push("  action: '" + snippetAction + "',");
           lines.push('  recaptcha: {');
-          lines.push("    mode: '" + recaptchaMode + "'");
+          lines.push("    mode: '" + recaptchaMode + "',");
+          lines.push("    action: '" + snippetActionEscaped + "'");
           lines.push('  },');
         }
 
@@ -941,29 +942,51 @@
           'sdkmessageprocessingstepid',
           'configuration',
           'statecode',
+          'statuscode',
           '_sdkmessageid_value',
           '_eventhandler_value',
           '_sdkmessageprocessingstepsecureconfigid_value'
         ];
 
-        var steps = await queryAll(
+        var activeSteps = await queryAll(
           'sdkmessageprocessingstep',
           selectColumns,
           '_eventhandler_value eq ' + normalizedPluginTypeId +
           ' and _sdkmessageid_value eq ' + normalizedSdkMessageId +
           ' and statecode eq 0',
-          2
+          25
         );
 
-        if (!steps.length) {
-          throw new Error('No active sdkmessageprocessingstep found for the selected plugin and message.');
+        if (activeSteps.length === 1) {
+          return {
+            step: activeSteps[0],
+            warning: null
+          };
         }
 
-        if (steps.length > 1) {
-          throw new Error('Multiple active sdkmessageprocessingstep records were found for this plugin and message. Expected exactly one.');
+        if (activeSteps.length > 1) {
+          return {
+            step: activeSteps[0],
+            warning: 'Multiple active plugin steps were found. Using the first active step returned by Dataverse.'
+          };
         }
 
-        return steps[0];
+        var allSteps = await queryAll(
+          'sdkmessageprocessingstep',
+          selectColumns,
+          '_eventhandler_value eq ' + normalizedPluginTypeId +
+          ' and _sdkmessageid_value eq ' + normalizedSdkMessageId,
+          25
+        );
+
+        if (!allSteps.length) {
+          throw new Error('No sdkmessageprocessingstep found for the selected plugin and message. Register a plugin step for msdynmkt_validateformsubmission first.');
+        }
+
+        return {
+          step: allSteps[0],
+          warning: 'No active plugin step was found. Loaded the first inactive matching step. Activate the step to enforce validation at runtime.'
+        };
       }
 
       async function loadSecureConfig(secureConfigId) {
@@ -985,7 +1008,8 @@
 
         var pluginType = await resolvePluginType();
         var sdkMessage = await resolveSdkMessage();
-        var step = await resolveStep(pluginType.plugintypeid, sdkMessage.sdkmessageid);
+        var stepResolution = await resolveStep(pluginType.plugintypeid, sdkMessage.sdkmessageid);
+        var step = stepResolution.step;
 
         state.stepId = normalizeGuid(step.sdkmessageprocessingstepid);
         state.secureConfigId = normalizeGuid(step._sdkmessageprocessingstepsecureconfigid_value);
@@ -1021,7 +1045,11 @@
         renderSecretVisibility();
         renderEnterpriseApiKeyVisibility();
         setInputsLoaded(true);
-        setStatus('Loaded current configuration.');
+        if (stepResolution.warning) {
+          setStatus('Loaded with warning: ' + stepResolution.warning);
+        } else {
+          setStatus('Loaded current configuration.');
+        }
       }
 
       async function saveConfiguration() {

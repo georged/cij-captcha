@@ -126,7 +126,6 @@ Supported settings:
 
 - `provider`: `'recaptcha' | 'turnstile' | 'hcaptcha'` (default `'recaptcha'`)
 - `siteKey`: provider site key (**required**)
-- `action`: reCAPTCHA action (default `'cij_form_submit'`)
 - `enableDebugLogs`: `boolean` (default `false`)
 - `eagerLoad`: `boolean` (default `true`)
 - `preSubmit`:
@@ -134,6 +133,10 @@ Supported settings:
   - `verifyEndpoint`: absolute URL to your verification endpoint (required when enabled)
   - `timeoutMs`: request timeout in milliseconds (default `8000`)
   - `failureMessage`: user-facing message when verification fails (default `'Captcha verification failed. Please try again.'`)
+- `recaptcha`:
+  - `mode`: `'standard' | 'enterprise'` (default `'standard'`)
+  - `action`: reCAPTCHA action (default `'cij_form_submit'`)
+  - any other properties are forwarded to `grecaptcha.execute(...)` options
 - `turnstile`:
   - `size`: `'normal' | 'compact' | 'invisible'` (default `'normal'`)
   - `execution`: `'execute' | 'render'` (default `'execute'`)

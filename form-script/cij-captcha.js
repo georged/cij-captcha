@@ -31,11 +31,13 @@
  *   provider: 'recaptcha' | 'turnstile' | 'hcaptcha'  // default 'recaptcha'
  *   siteKey: string                         // site key (public), required
  *   formId?: string                         // optional form identifier override
- *   action: string                          // reCAPTCHA only; default 'cij_form_submit'
  *   enableDebugLogs: boolean                // default false
  *   eagerLoad: boolean                      // default true
  *   recaptcha?: {
  *     mode?: 'standard'|'enterprise'        // default 'standard'
+ *     action?: string                        // default 'cij_form_submit'
+ *     // all other properties (except action) are merged into execute() options
+ *     // use recaptcha.action for reCAPTCHA action name
  *   }
  *   preSubmit?: {
   *     verifyEndpoint?: string               // required when preSubmit is present
@@ -48,12 +50,14 @@
  *     execution?: 'execute'|'render',                      // default 'execute'
  *     appearance?: 'always'|'execute'|'interaction-only',  // default 'execute'
  *     theme?: 'auto'|'light'|'dark',                       // default 'auto'
- *     tokenReuseTimeout?: number                           // default 240000 (4 minutes)             
+ *     tokenReuseTimeout?: number                           // default 240000 (4 minutes)
+ *     // all other properties are merged into render() options
  *   }
  *   hcaptcha?: {
  *     size?: 'normal'|'compact'|'invisible',               // default 'normal'
  *     theme?: 'light'|'dark',                              // default 'light'
  *     tokenReuseTimeout?: number                           // default 240000 (4 minutes)
+ *     // all other properties are merged into render() options
  *   }
  *
  * Per-form overrides (HTML attributes on the div[data-form-id] container):
@@ -86,11 +90,11 @@
     provider: 'recaptcha',
     siteKey: '',
     formId: '',
-    action: 'cij_form_submit',
     enableDebugLogs: false,
     eagerLoad: true,
     recaptcha: {
-      mode: 'standard'
+      mode: 'standard',
+      action: 'cij_form_submit'
     },
     preSubmit: {
       enabled: false,
@@ -118,12 +122,53 @@
     return fallback;
   }
 
-  function normalizeRecaptchaSettings(input, defaults) {
-    var source = input || {};
+  function shallowMerge(base, override) {
+    var result = {};
+    var key;
 
-    return {
-      mode: pickAllowed(source.mode, ['standard', 'enterprise'], defaults.mode)
-    };
+    for (key in base) {
+      if (!Object.prototype.hasOwnProperty.call(base, key)) continue;
+      result[key] = base[key];
+    }
+
+    if (!override || typeof override !== 'object') return result;
+
+    for (key in override) {
+      if (!Object.prototype.hasOwnProperty.call(override, key)) continue;
+      result[key] = override[key];
+    }
+
+    return result;
+  }
+
+  function omitKeys(source, keysToOmit) {
+    var result = {};
+    if (!source || typeof source !== 'object') return result;
+
+    for (var key in source) {
+      if (!Object.prototype.hasOwnProperty.call(source, key)) continue;
+
+      var shouldOmit = false;
+      for (var i = 0; i < keysToOmit.length; i++) {
+        if (key === keysToOmit[i]) {
+          shouldOmit = true;
+          break;
+        }
+      }
+
+      if (!shouldOmit) result[key] = source[key];
+    }
+
+    return result;
+  }
+
+  function normalizeRecaptchaSettings(input, defaults) {
+    var source = (input && typeof input === 'object') ? input : {};
+    var merged = shallowMerge(defaults, source);
+
+    merged.mode = pickAllowed(source.mode, ['standard', 'enterprise'], defaults.mode);
+    merged.action = String(source.action || defaults.action || '').trim();
+    return merged;
   }
 
   function normalizePreSubmitSettings(input, defaults) {
@@ -160,39 +205,41 @@
   }
 
   function normalizeTurnstileSettings(input, defaults) {
-    var source = input || {};
+    var source = (input && typeof input === 'object') ? input : {};
+    var merged = shallowMerge(defaults, source);
 
     var normalizedTimeout = defaults.tokenReuseTimeout;
     if (typeof source.tokenReuseTimeout === 'number' && source.tokenReuseTimeout > 0) {
       normalizedTimeout = source.tokenReuseTimeout;
     }
 
-    return {
-      size: pickAllowed(source.size, ['normal', 'compact', 'invisible'], defaults.size),
-      execution: pickAllowed(source.execution, ['execute', 'render'], defaults.execution),
-      appearance: pickAllowed(
-        source.appearance,
-        ['always', 'execute', 'interaction-only'],
-        defaults.appearance
-      ),
-      theme: pickAllowed(source.theme, ['auto', 'light', 'dark'], defaults.theme),
-      tokenReuseTimeout: normalizedTimeout
-    };
+    merged.size = pickAllowed(source.size, ['normal', 'compact', 'invisible'], defaults.size);
+    merged.execution = pickAllowed(source.execution, ['execute', 'render'], defaults.execution);
+    merged.appearance = pickAllowed(
+      source.appearance,
+      ['always', 'execute', 'interaction-only'],
+      defaults.appearance
+    );
+    merged.theme = pickAllowed(source.theme, ['auto', 'light', 'dark'], defaults.theme);
+    merged.tokenReuseTimeout = normalizedTimeout;
+
+    return merged;
   }
 
   function normalizeHcaptchaSettings(input, defaults) {
-    var source = input || {};
+    var source = (input && typeof input === 'object') ? input : {};
+    var merged = shallowMerge(defaults, source);
 
     var normalizedTimeout = defaults.tokenReuseTimeout;
     if (typeof source.tokenReuseTimeout === 'number' && source.tokenReuseTimeout > 0) {
       normalizedTimeout = source.tokenReuseTimeout;
     }
 
-    return {
-      size: pickAllowed(source.size, ['normal', 'compact', 'invisible'], defaults.size),
-      theme: pickAllowed(source.theme, ['light', 'dark'], defaults.theme),
-      tokenReuseTimeout: normalizedTimeout
-    };
+    merged.size = pickAllowed(source.size, ['normal', 'compact', 'invisible'], defaults.size);
+    merged.theme = pickAllowed(source.theme, ['light', 'dark'], defaults.theme);
+    merged.tokenReuseTimeout = normalizedTimeout;
+
+    return merged;
   }
 
   function mergeSettings(base, override) {
@@ -200,7 +247,6 @@
       provider: base.provider,
       siteKey: base.siteKey,
       formId: base.formId,
-      action: base.action,
       enableDebugLogs: base.enableDebugLogs,
       eagerLoad: base.eagerLoad,
       recaptcha: normalizeRecaptchaSettings(null, base.recaptcha),
@@ -213,7 +259,7 @@
 
     for (var key in override) {
       if (!Object.prototype.hasOwnProperty.call(override, key)) continue;
-      if (key === 'turnstile' || key === 'preSubmit' || key === 'recaptcha' || key === 'hcaptcha') continue;
+      if (key === 'turnstile' || key === 'preSubmit' || key === 'recaptcha' || key === 'hcaptcha' || key === 'action') continue;
       result[key] = override[key];
     }
 
@@ -221,6 +267,16 @@
     result.preSubmit = normalizePreSubmitSettings(override.preSubmit, result.preSubmit);
     result.turnstile = normalizeTurnstileSettings(override.turnstile, result.turnstile);
     result.hcaptcha = normalizeHcaptchaSettings(override.hcaptcha, result.hcaptcha);
+
+    // Backward compatibility: map legacy top-level action to recaptcha.action
+    // when recaptcha.action is not explicitly set.
+    var legacyTopLevelAction = String(override.action || '').trim();
+    var explicitRecaptchaAction = override.recaptcha && typeof override.recaptcha === 'object'
+      ? String(override.recaptcha.action || '').trim()
+      : '';
+    if (legacyTopLevelAction && !explicitRecaptchaAction) {
+      result.recaptcha.action = legacyTopLevelAction;
+    }
 
     return result;
   }
@@ -281,16 +337,19 @@
     }
 
     function getRecaptchaToken(action) {
-      var effectiveAction = action || config.action;
+      var effectiveAction = action || config.recaptcha.action;
       return loadRecaptchaScript().then(function () {
+        var executeOptions = omitKeys(config.recaptcha, ['mode', 'action']);
+        executeOptions.action = effectiveAction;
+
         if (config.recaptcha.mode === 'enterprise') {
           if (!global.grecaptcha || !global.grecaptcha.enterprise || !global.grecaptcha.enterprise.execute) {
             throw new Error('[CIJ Captcha] reCAPTCHA Enterprise API is not available.');
           }
-          return global.grecaptcha.enterprise.execute(config.siteKey, { action: effectiveAction });
+          return global.grecaptcha.enterprise.execute(config.siteKey, executeOptions);
         }
 
-        return global.grecaptcha.execute(config.siteKey, { action: effectiveAction });
+        return global.grecaptcha.execute(config.siteKey, executeOptions);
       });
     }
 
@@ -347,26 +406,26 @@
       };
       state.turnstileWidgets.push(entry);
 
-      entry.widgetId = global.turnstile.render(container, {
-        sitekey: config.siteKey,
-        'response-field': false,
-        size: config.turnstile.size,
-        execution: config.turnstile.execution,
-        appearance: config.turnstile.appearance,
-        theme: config.turnstile.theme,
-        callback: function (token) {
+      var turnstileOptions = shallowMerge(
+        {
+          sitekey: config.siteKey,
+          'response-field': false
+        },
+        omitKeys(config.turnstile, ['tokenReuseTimeout'])
+      );
+      turnstileOptions.callback = function (token) {
           entry.token = token;
           entry.tokenAt = Date.now();
 
           var captchaField = entry.formEl.querySelector('input[name="' + CIJ_FIELD_NAME + '"]');
           if (captchaField) captchaField.value = token;
           if (entry.resolve) entry.resolve(token);
-        },
-        'error-callback': function (code) {
+        };
+      turnstileOptions['error-callback'] = function (code) {
           console.error('[CIJ Captcha] Turnstile error:', code);
           if (entry.reject) entry.reject(new Error('[CIJ Captcha] Turnstile error: ' + code));
-        },
-        'expired-callback': function () {
+        };
+      turnstileOptions['expired-callback'] = function () {
           entry.token = null;
           entry.tokenAt = 0;
 
@@ -375,8 +434,9 @@
 
           entry.resolve = null;
           entry.reject = null;
-        }
-      });
+        };
+
+      entry.widgetId = global.turnstile.render(container, turnstileOptions);
 
       return entry;
     }
@@ -434,23 +494,25 @@
       };
       state.hcaptchaWidgets.push(entry);
 
-      entry.widgetId = global.hcaptcha.render(container, {
-        sitekey: config.siteKey,
-        size: config.hcaptcha.size,
-        theme: config.hcaptcha.theme,
-        callback: function (token) {
+      var hcaptchaOptions = shallowMerge(
+        {
+          sitekey: config.siteKey
+        },
+        omitKeys(config.hcaptcha, ['tokenReuseTimeout'])
+      );
+      hcaptchaOptions.callback = function (token) {
           entry.token = token;
           entry.tokenAt = Date.now();
 
           var captchaField = entry.formEl.querySelector('input[name="' + CIJ_FIELD_NAME + '"]');
           if (captchaField) captchaField.value = token;
           if (entry.resolve) entry.resolve(token);
-        },
-        'error-callback': function (error) {
+        };
+      hcaptchaOptions['error-callback'] = function (error) {
           console.error('[CIJ Captcha] hCaptcha error:', error);
           if (entry.reject) entry.reject(new Error('[CIJ Captcha] hCaptcha error.'));
-        },
-        'expired-callback': function () {
+        };
+      hcaptchaOptions['expired-callback'] = function () {
           entry.token = null;
           entry.tokenAt = 0;
 
@@ -459,8 +521,9 @@
 
           entry.resolve = null;
           entry.reject = null;
-        }
-      });
+        };
+
+      entry.widgetId = global.hcaptcha.render(container, hcaptchaOptions);
 
       return entry;
     }
@@ -723,7 +786,7 @@
     function getFormAction(formEl) {
       var holder = formEl.closest ? formEl.closest('div[data-form-id]') : null;
       var attr = holder ? String(holder.getAttribute('data-captcha-action') || '').trim() : '';
-      return attr || String(config.action || '').trim();
+      return attr || String(config.recaptcha.action || '').trim();
     }
 
     function getExplicitFailureMessage(formEl) {

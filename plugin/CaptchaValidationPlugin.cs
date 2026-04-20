@@ -76,6 +76,8 @@ namespace Georged.Cij.Captcha
         private const string CaptchaFieldName = "captcha-response";
         private const string CaptchaActionFieldName = "captcha-action";
         private const string CaptchaFormIdFieldName = "captcha-formid";
+        private const string RecaptchaResponseFieldName = "g-recaptcha-response";
+        private const string HcaptchaResponseFieldName = "h-captcha-response";
 
         // ── Runtime configuration (populated from plug-in config at registration) ─
         private readonly CaptchaProvider _provider;
@@ -206,9 +208,7 @@ namespace Georged.Cij.Captcha
 
             var requestString = (string)context.InputParameters["msdynmkt_formsubmissionrequest"];
             var requestObject = Deserialize<FormSubmissionRequest>(requestString);
-            tracingService.Trace($"[CijCaptcha] Raw form submission: {requestString}");
-            if(requestObject.Fields!=null)
-            tracingService.Trace($"[CijCaptcha] Parsed fields: {string.Join(", ", requestObject.Fields.Select(f => $"{f.Key}={f.Value}"))}");
+            LogSubmittedFields(tracingService, requestObject);
 
             // ── 2. Resolve the expected field name for the active provider ─────
             var captchaToken = (requestObject?.Fields?.FirstOrDefault(f => f.Key == CaptchaFieldName))?.Value;
@@ -261,6 +261,25 @@ namespace Georged.Cij.Captcha
             return string.IsNullOrWhiteSpace(_validationFailureMessage)
                 ? DefaultValidationFailureMessage
                 : _validationFailureMessage;
+        }
+
+        private void LogSubmittedFields(ITracingService tracingService, FormSubmissionRequest requestObject)
+        {
+            if (requestObject?.Fields == null || requestObject.Fields.Count == 0)
+            {
+                tracingService.Trace("[CijCaptcha] Parsed fields: (none)");
+                return;
+            }
+
+            var loggedFields = requestObject.Fields
+                .Where(f => !string.Equals(f.Key, RecaptchaResponseFieldName, StringComparison.OrdinalIgnoreCase)
+                            && !string.Equals(f.Key, HcaptchaResponseFieldName, StringComparison.OrdinalIgnoreCase))
+                .Select(f => $"{f.Key}={f.Value}")
+                .ToArray();
+
+            var omittedCount = requestObject.Fields.Count - loggedFields.Length;
+            var suffix = omittedCount > 0 ? $" (omitted excessive captcha fields: {omittedCount})" : string.Empty;
+            tracingService.Trace($"[CijCaptcha] Parsed fields: {string.Join(", ", loggedFields)}{suffix}");
         }
 
         /// <summary>

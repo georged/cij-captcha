@@ -12,8 +12,8 @@
     <SignAssembly>true</SignAssembly>
     <AssemblyOriginatorKeyFile>CijCaptcha.snk</AssemblyOriginatorKeyFile>
     <Version>$(VersionPrefix)</Version>
-    <AssemblyVersion>1.0.0.19</AssemblyVersion>
-    <FileVersion>1.0.0.19</FileVersion>
+    <AssemblyVersion>1.0.0.20</AssemblyVersion>
+    <FileVersion>1.0.0.20</FileVersion>
   </PropertyGroup>
 
   <ItemGroup>

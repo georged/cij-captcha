@@ -6,16 +6,13 @@ Protect Customer Insights Journeys (CIJ) forms with server-side CAPTCHA validati
 - Server plugin: `plugin/`
 - Config app: `code-app/`
 
-## Release 1.1.0.2
+## Release 1.1.5
 
-This release supports:
+[This release](https://github.com/georged/cij-captcha/releases/tag/v1.1.5) includes:
 
-- Managed solution distribution via GitHub Releases
-- Hosted client script via jsDelivr (no self-hosting required)
-- Script init API: `window.CijCaptcha.init({...})`
-- Provider support: Google reCAPTCHA v3, Cloudflare Turnstile, and hCaptcha
-- Multi-form support
-- Solution configuration
+- hCaptcha support
+- Custom settings for all providers
+- Minor bug fixes and improved logging
 
 ## Quick Start
 
@@ -50,7 +47,7 @@ This release supports:
             });
           }
         </script>
-        <script src="https://cdn.jsdelivr.net/gh/georged/cij-captcha@v1.1.0/form-script/cij-captcha.js"
+        <script src="https://cdn.jsdelivr.net/gh/georged/cij-captcha@v1.1.5/form-script/cij-captcha.js"
           onload="initCijCaptcha()">
         </script>
         <main>
@@ -60,7 +57,7 @@ This release supports:
    
 4. Save and publish the form. 
 
-5. Wait for propagation (typically 1–10 minutes), then test on a standalone page.
+5. Test on a standalone page (add `#d365mkt-nocache` to the URL to bypass form caching).
 
 > [!TIP]
 >

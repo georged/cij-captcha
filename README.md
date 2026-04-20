@@ -47,7 +47,7 @@ Protect Customer Insights Journeys (CIJ) forms with server-side CAPTCHA validati
             });
           }
         </script>
-        <script src="https://cdn.jsdelivr.net/gh/georged/cij-captcha@v1.1.0/form-script/cij-captcha.js"
+        <script src="https://cdn.jsdelivr.net/gh/georged/cij-captcha@v1.1.5/form-script/cij-captcha.js"
           onload="initCijCaptcha()">
         </script>
         <main>
@@ -57,7 +57,7 @@ Protect Customer Insights Journeys (CIJ) forms with server-side CAPTCHA validati
    
 4. Save and publish the form. 
 
-5. Wait for propagation (typically 1–10 minutes), then test on a standalone page.
+5. Test on a standalone page (add `#d365mkt-nocache` to the URL to bypass form caching).
 
 > [!TIP]
 >

@@ -6,16 +6,13 @@ Protect Customer Insights Journeys (CIJ) forms with server-side CAPTCHA validati
 - Server plugin: `plugin/`
 - Config app: `code-app/`
 
-## Release 1.1.0.2
+## Release 1.1.5
 
-This release supports:
+[This release](https://github.com/georged/cij-captcha/releases/tag/v1.1.5) includes:
 
-- Managed solution distribution via GitHub Releases
-- Hosted client script via jsDelivr (no self-hosting required)
-- Script init API: `window.CijCaptcha.init({...})`
-- Provider support: Google reCAPTCHA v3, Cloudflare Turnstile, and hCaptcha
-- Multi-form support
-- Solution configuration
+- hCaptcha support
+- Custom settings for all providers
+- Minor bug fixes and improved logging
 
 ## Quick Start
 

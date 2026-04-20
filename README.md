@@ -13,7 +13,7 @@ This release supports:
 - Managed solution distribution via GitHub Releases
 - Hosted client script via jsDelivr (no self-hosting required)
 - Script init API: `window.CijCaptcha.init({...})`
-- Provider support: Google reCAPTCHA v3 and Cloudflare Turnstile
+- Provider support: Google reCAPTCHA v3, Cloudflare Turnstile, and hCaptcha
 - Multi-form support
 - Solution configuration
 
@@ -76,7 +76,8 @@ Instead of the solution configuration page, administrators can use **Plugin Regi
 - reCAPTCHA (standard) unsecure config: `{"provider":"recaptcha","recaptchaMode":"standard","actionThresholds":{"cij_form_submit":0.5}}`
 - reCAPTCHA (enterprise) unsecure config: `{"provider":"recaptcha","recaptchaMode":"enterprise","actionThresholds":{"cij_form_submit":0.5}}`
 - Turnstile unsecure config: `{"provider":"turnstile"}`
-- Turnstile or reCAPTCHA (standard) secure config: `{"secretKey":"YOUR_SECRET_KEY"}`
+- hCaptcha unsecure config: `{"provider":"hcaptcha"}`
+- Turnstile, hCaptcha, or reCAPTCHA (standard) secure config: `{"secretKey":"YOUR_SECRET_KEY"}`
 - reCAPTCHA (enterprise) secure config: `{"secretKey":"YOUR_SECRET_KEY","enterpriseApiKey":"YOUR_ENTERPRISE_API_KEY","enterpriseProjectId":"YOUR_GCP_PROJECT_ID","enterpriseSiteKey":"YOUR_ENTERPRISE_SITE_KEY"}`
 
 ### Client-side script
@@ -123,7 +124,7 @@ If you want latest from default branch (not pinned), use:
 
 Supported settings:
 
-- `provider`: `'recaptcha' | 'turnstile'` (default `'recaptcha'`)
+- `provider`: `'recaptcha' | 'turnstile' | 'hcaptcha'` (default `'recaptcha'`)
 - `siteKey`: provider site key (**required**)
 - `action`: reCAPTCHA action (default `'cij_form_submit'`)
 - `enableDebugLogs`: `boolean` (default `false`)
@@ -138,6 +139,10 @@ Supported settings:
   - `execution`: `'execute' | 'render'` (default `'execute'`)
   - `appearance`: `'always' | 'execute' | 'interaction-only'` (default `'execute'`)
   - `theme`: `'auto' | 'light' | 'dark'` (default `'auto'`)
+  - `tokenReuseTimeout`: number in ms (default `240000`)
+- `hcaptcha`:
+  - `size`: `'normal' | 'compact' | 'invisible'` (default `'normal'`)
+  - `theme`: `'light' | 'dark'` (default `'light'`)
   - `tokenReuseTimeout`: number in ms (default `240000`)
 
 ### Strong model (recommended)
@@ -203,7 +208,7 @@ npm start
 Endpoint:
 
 - `POST /api/captcha/verify`
-- Body: `{ "provider": "recaptcha" | "turnstile", "token": "...", "action": "cij_form_submit", "actionThresholds": { "cij_form_submit": 0.5 } }`
+- Body: `{ "provider": "recaptcha" | "turnstile" | "hcaptcha", "token": "...", "action": "cij_form_submit", "actionThresholds": { "cij_form_submit": 0.5 } }`
 - Success response: `{ "success": true, ... }`
 - Failure response: `{ "success": false, "reason": "..." }`
 
@@ -252,6 +257,7 @@ Register with Plugin Registration Tool:
   - Unsecure (reCAPTCHA standard): `{"provider":"recaptcha","recaptchaMode":"standard","actionThresholds":{"cij_form_submit":0.5}}`
   - Unsecure (reCAPTCHA enterprise): `{"provider":"recaptcha","recaptchaMode":"enterprise","actionThresholds":{"cij_form_submit":0.5}}`
   - Unsecure (Turnstile): `{"provider":"turnstile"}`
+  - Unsecure (hCaptcha): `{"provider":"hcaptcha"}`
   - Secure (standard): `{"secretKey":"YOUR_SECRET_KEY"}`
   - Secure (enterprise): `{"secretKey":"YOUR_SECRET_KEY","enterpriseApiKey":"YOUR_ENTERPRISE_API_KEY","enterpriseProjectId":"YOUR_GCP_PROJECT_ID","enterpriseSiteKey":"YOUR_ENTERPRISE_SITE_KEY"}`
 

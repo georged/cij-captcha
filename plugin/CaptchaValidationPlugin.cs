@@ -25,7 +25,10 @@ namespace Georged.Cij.Captcha
         GoogleRecaptchaV3,
 
         /// <summary>Cloudflare Turnstile — pass/fail, privacy-friendly.</summary>
-        CloudflareTurnstile
+        CloudflareTurnstile,
+
+        /// <summary>hCaptcha — pass/fail challenge-response.</summary>
+        HCaptcha
     }
 
     /// <summary>
@@ -35,6 +38,7 @@ namespace Georged.Cij.Captcha
     /// Supports:
     ///   • Google reCAPTCHA v3   
     ///   • Cloudflare Turnstile 
+    ///   • hCaptcha
     ///
     /// Registration details (Plugin Registration Tool)
     /// ────────────────────────────────────────────────
@@ -49,6 +53,7 @@ namespace Georged.Cij.Captcha
     ///     {"provider":"recaptcha","recaptchaMode":"standard","actionThresholds":{"cij_form_submit":0.5}}
     ///     {"provider":"recaptcha","recaptchaMode":"enterprise","actionThresholds":{"cij_form_submit":0.7}}
     ///     {"provider":"turnstile"}
+    ///     {"provider":"hcaptcha"}
     ///
     ///   Secure Config (stored encrypted by Dataverse, JSON):
     ///     {"secretKey":"...","enterpriseApiKey":"...","enterpriseProjectId":"...","enterpriseSiteKey":"..."}
@@ -65,6 +70,7 @@ namespace Georged.Cij.Captcha
         private const string RecaptchaVerifyUrl = "https://www.google.com/recaptcha/api/siteverify";
         private const string RecaptchaEnterpriseAssessmentsBaseUrl = "https://recaptchaenterprise.googleapis.com/v1/projects";
         private const string TurnstileVerifyUrl = "https://challenges.cloudflare.com/turnstile/v0/siteverify";
+        private const string HcaptchaVerifyUrl = "https://api.hcaptcha.com/siteverify";
 
         // ── Form field names (must match the hidden field name on the CIJ form) ─
         private const string CaptchaFieldName = "captcha-response";
@@ -231,6 +237,10 @@ namespace Georged.Cij.Captcha
             {
                 case CaptchaProvider.CloudflareTurnstile:
                     isValid = VerifyTurnstile(captchaToken, tracingService);
+                    break;
+
+                case CaptchaProvider.HCaptcha:
+                    isValid = VerifyHCaptcha(captchaToken, tracingService);
                     break;
 
                 default: // GoogleRecaptchaV3
@@ -451,6 +461,36 @@ namespace Georged.Cij.Captcha
         }
 
         /// <summary>
+        /// Verifies an hCaptcha token (pass/fail — no score threshold check).
+        /// </summary>
+        private bool VerifyHCaptcha(string token, ITracingService tracingService)
+        {
+            var payload = new Dictionary<string, string>
+            {
+                { "secret",   _secretKey },
+                { "response", token      }
+            };
+
+            var raw = SendVerifyRequest(HcaptchaVerifyUrl, new FormUrlEncodedContent(payload), tracingService);
+            if (raw == null) return false;
+
+            var response = Deserialize<HcaptchaVerifyResponse>(raw);
+
+            tracingService.Trace(
+                "[CijCaptcha] hCaptcha: success=" + response.success + ", " +
+                "hostname=" + response.hostname + ", score=" + response.score);
+
+            if (!response.success)
+            {
+                var errors = response.error_codes != null
+                    ? string.Join(", ", response.error_codes) : "none";
+                tracingService.Trace("[CijCaptcha] hCaptcha failed. Error codes: " + errors);
+            }
+
+            return response.success;
+        }
+
+        /// <summary>
         /// Sends a POST with the given content and returns the raw response body, or null on failure.
         /// </summary>
         private string SendVerifyRequest(string url, HttpContent content, ITracingService tracingService)
@@ -510,6 +550,7 @@ namespace Georged.Cij.Captcha
 
             var lower = config.ToLowerInvariant();
             if (lower.Contains("turnstile"))  return CaptchaProvider.CloudflareTurnstile;
+            if (lower.Contains("hcaptcha"))   return CaptchaProvider.HCaptcha;
             if (lower.Contains("recaptcha"))  return CaptchaProvider.GoogleRecaptchaV3;
 
             return CaptchaProvider.GoogleRecaptchaV3;
@@ -663,6 +704,29 @@ namespace Georged.Cij.Captcha
 
         [DataMember(Name = "cdata")]
         public string cdata { get; set; }
+    }
+
+    /// <summary>hCaptcha /siteverify response.</summary>
+    [DataContract]
+    public class HcaptchaVerifyResponse
+    {
+        [DataMember(Name = "success")]
+        public bool success { get; set; }
+
+        [DataMember(Name = "challenge_ts")]
+        public string challenge_ts { get; set; }
+
+        [DataMember(Name = "hostname")]
+        public string hostname { get; set; }
+
+        [DataMember(Name = "credit")]
+        public bool credit { get; set; }
+
+        [DataMember(Name = "error-codes")]
+        public List<string> error_codes { get; set; }
+
+        [DataMember(Name = "score")]
+        public double? score { get; set; }
     }
 
     [DataContract]

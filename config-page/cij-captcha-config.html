@@ -316,6 +316,7 @@
             <select id="provider" name="provider">
               <option value="recaptcha">Google reCAPTCHA v3</option>
               <option value="turnstile">Cloudflare Turnstile</option>
+              <option value="hcaptcha">hCaptcha</option>
             </select>
           </label>
 
@@ -565,7 +566,7 @@
         try {
           var json = JSON.parse(config);
 
-          if (json.provider === 'recaptcha' || json.provider === 'turnstile') {
+          if (json.provider === 'recaptcha' || json.provider === 'turnstile' || json.provider === 'hcaptcha') {
             result.provider = json.provider;
           }
 
@@ -1209,6 +1210,8 @@
         if (secretKey) {
           if (provider === 'turnstile') {
             config.turnstileSecretKey = secretKey;
+          } else if (provider === 'hcaptcha') {
+            config.hcaptchaSecretKey = secretKey;
           } else {
             config.recaptchaSecretKey = secretKey;
           }

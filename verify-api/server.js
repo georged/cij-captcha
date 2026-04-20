@@ -10,7 +10,7 @@ dotenv.config({ path: path.join(__dirname, '.env') });
  * Loads verify-api/config.json and maps its keys to the equivalent env var names.
  * Keys in config.json (same format produced by the plugin config page "Copy for verify-api"):
  *   recaptchaMode, actionThresholds, recaptchaSecretKey, turnstileSecretKey, enterpriseProjectId,
- *   enterpriseApiKey, enterpriseSiteKey, corsOrigins
+ *   enterpriseApiKey, enterpriseSiteKey, hcaptchaSecretKey, corsOrigins
  * Env vars always take precedence over config.json values.
  */
 function loadConfigFile(configPath) {
@@ -22,6 +22,7 @@ function loadConfigFile(configPath) {
     if (config.actionThresholds != null) env.RECAPTCHA_ACTION_THRESHOLDS = config.actionThresholds;
     if (config.recaptchaSecretKey != null) env.RECAPTCHA_SECRET_KEY = String(config.recaptchaSecretKey);
     if (config.turnstileSecretKey != null) env.TURNSTILE_SECRET_KEY = String(config.turnstileSecretKey);
+    if (config.hcaptchaSecretKey != null) env.HCAPTCHA_SECRET_KEY = String(config.hcaptchaSecretKey);
     if (config.enterpriseProjectId != null) env.RECAPTCHA_ENTERPRISE_PROJECT_ID = String(config.enterpriseProjectId);
     if (config.enterpriseApiKey != null) env.RECAPTCHA_ENTERPRISE_API_KEY = String(config.enterpriseApiKey);
     if (config.enterpriseSiteKey != null) env.RECAPTCHA_SITE_KEY = String(config.enterpriseSiteKey);
@@ -110,8 +111,8 @@ function validateRequestBody(body) {
   }
 
   const provider = String(body.provider || '').trim().toLowerCase();
-  if (provider !== 'recaptcha' && provider !== 'turnstile') {
-    return 'provider must be either recaptcha or turnstile.';
+  if (provider !== 'recaptcha' && provider !== 'turnstile' && provider !== 'hcaptcha') {
+    return 'provider must be either recaptcha, turnstile, or hcaptcha.';
   }
 
   const token = String(body.token || '').trim();
@@ -364,6 +365,49 @@ async function verifyTurnstile({ token, remoteip, env, fetchImpl }) {
   };
 }
 
+async function verifyHcaptcha({ token, siteKey, remoteip, env, fetchImpl }) {
+  const secret = String(env.HCAPTCHA_SECRET_KEY || '').trim();
+  if (!secret) {
+    throw new Error('HCAPTCHA_SECRET_KEY is not configured.');
+  }
+
+  const params = new URLSearchParams();
+  params.set('secret', secret);
+  params.set('response', token);
+  if (remoteip) params.set('remoteip', remoteip);
+  if (siteKey) params.set('sitekey', siteKey);
+
+  const response = await fetchImpl('https://api.hcaptcha.com/siteverify', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded'
+    },
+    body: params.toString()
+  });
+
+  if (!response.ok) {
+    throw new Error(`hCaptcha siteverify returned ${response.status}.`);
+  }
+
+  const result = await response.json();
+  if (!asBool(result.success)) {
+    return {
+      success: false,
+      reason: 'hCaptcha token is invalid.',
+      provider: 'hcaptcha',
+      score: typeof result.score === 'number' ? result.score : null,
+      errors: result['error-codes'] || []
+    };
+  }
+
+  return {
+    success: true,
+    provider: 'hcaptcha',
+    score: typeof result.score === 'number' ? result.score : null,
+    errors: result['error-codes'] || []
+  };
+}
+
 function createApp(options = {}) {
   const env = options.env || process.env;
   const fetchImpl = options.fetchImpl || fetch;
@@ -436,9 +480,15 @@ function createVerifier(options = {}) {
         actionThresholds == null ? env.RECAPTCHA_ACTION_THRESHOLDS : actionThresholds
     };
 
-    return provider === 'recaptcha'
-      ? verifyRecaptcha({ token, action, formId, siteKey, remoteip, userAgent, env: requestEnv, fetchImpl })
-      : verifyTurnstile({ token, remoteip, env: requestEnv, fetchImpl });
+    if (provider === 'recaptcha') {
+      return verifyRecaptcha({ token, action, formId, siteKey, remoteip, userAgent, env: requestEnv, fetchImpl });
+    }
+
+    if (provider === 'hcaptcha') {
+      return verifyHcaptcha({ token, siteKey, remoteip, env: requestEnv, fetchImpl });
+    }
+
+    return verifyTurnstile({ token, remoteip, env: requestEnv, fetchImpl });
   };
 }
 

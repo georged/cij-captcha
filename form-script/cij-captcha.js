@@ -21,8 +21,14 @@
  *     siteKey: 'YOUR_RECAPTCHA_SITE_KEY'
  *   });
  *
+ *   // hCaptcha (minimum)
+ *   window.CijCaptcha.init({
+ *     provider: 'hcaptcha',
+ *     siteKey: 'YOUR_HCAPTCHA_SITE_KEY'
+ *   });
+ *
  * Public init settings:
- *   provider: 'recaptcha' | 'turnstile'     // default 'recaptcha'
+ *   provider: 'recaptcha' | 'turnstile' | 'hcaptcha'  // default 'recaptcha'
  *   siteKey: string                         // site key (public), required
  *   formId?: string                         // optional form identifier override
  *   action: string                          // reCAPTCHA only; default 'cij_form_submit'
@@ -43,6 +49,11 @@
  *     appearance?: 'always'|'execute'|'interaction-only',  // default 'execute'
  *     theme?: 'auto'|'light'|'dark',                       // default 'auto'
  *     tokenReuseTimeout?: number                           // default 240000 (4 minutes)             
+ *   }
+ *   hcaptcha?: {
+ *     size?: 'normal'|'compact'|'invisible',               // default 'normal'
+ *     theme?: 'light'|'dark',                              // default 'light'
+ *     tokenReuseTimeout?: number                           // default 240000 (4 minutes)
  *   }
  *
  * Per-form overrides (HTML attributes on the div[data-form-id] container):
@@ -91,6 +102,11 @@
       execution: 'execute',
       appearance: 'execute',
       theme: 'auto',
+      tokenReuseTimeout: 240000
+    },
+    hcaptcha: {
+      size: 'normal',
+      theme: 'light',
       tokenReuseTimeout: 240000
     }
   };
@@ -164,6 +180,21 @@
     };
   }
 
+  function normalizeHcaptchaSettings(input, defaults) {
+    var source = input || {};
+
+    var normalizedTimeout = defaults.tokenReuseTimeout;
+    if (typeof source.tokenReuseTimeout === 'number' && source.tokenReuseTimeout > 0) {
+      normalizedTimeout = source.tokenReuseTimeout;
+    }
+
+    return {
+      size: pickAllowed(source.size, ['normal', 'compact', 'invisible'], defaults.size),
+      theme: pickAllowed(source.theme, ['light', 'dark'], defaults.theme),
+      tokenReuseTimeout: normalizedTimeout
+    };
+  }
+
   function mergeSettings(base, override) {
     var result = {
       provider: base.provider,
@@ -174,20 +205,22 @@
       eagerLoad: base.eagerLoad,
       recaptcha: normalizeRecaptchaSettings(null, base.recaptcha),
       preSubmit: normalizePreSubmitSettings(null, base.preSubmit),
-      turnstile: normalizeTurnstileSettings(null, base.turnstile)
+      turnstile: normalizeTurnstileSettings(null, base.turnstile),
+      hcaptcha: normalizeHcaptchaSettings(null, base.hcaptcha)
     };
 
     if (!override) return result;
 
     for (var key in override) {
       if (!Object.prototype.hasOwnProperty.call(override, key)) continue;
-      if (key === 'turnstile' || key === 'preSubmit' || key === 'recaptcha') continue;
+      if (key === 'turnstile' || key === 'preSubmit' || key === 'recaptcha' || key === 'hcaptcha') continue;
       result[key] = override[key];
     }
 
     result.recaptcha = normalizeRecaptchaSettings(override.recaptcha, result.recaptcha);
     result.preSubmit = normalizePreSubmitSettings(override.preSubmit, result.preSubmit);
     result.turnstile = normalizeTurnstileSettings(override.turnstile, result.turnstile);
+    result.hcaptcha = normalizeHcaptchaSettings(override.hcaptcha, result.hcaptcha);
 
     return result;
   }
@@ -202,6 +235,7 @@
     var state = {
       loadPromise: null,
       turnstileWidgets: [],
+      hcaptchaWidgets: [],
       observer: null,
       initialized: false
     };
@@ -347,13 +381,98 @@
       return entry;
     }
 
+    function loadHcaptchaScript() {
+      if (state.loadPromise) return state.loadPromise;
+      state.loadPromise = new Promise(function (resolve, reject) {
+        if (global.hcaptcha) {
+          resolve();
+          return;
+        }
+        var s = document.createElement('script');
+        s.src = 'https://js.hcaptcha.com/1/api.js?render=explicit';
+        s.async = true;
+        s.defer = true;
+        s.onload = function () { resolve(); };
+        s.onerror = function () {
+          state.loadPromise = null;
+          reject(new Error('[CIJ Captcha] Failed to load hCaptcha script.'));
+        };
+        document.head.appendChild(s);
+      });
+      return state.loadPromise;
+    }
+
+    function getOrCreateHcaptchaWidget(formEl, resolve, reject) {
+      for (var i = 0; i < state.hcaptchaWidgets.length; i++) {
+        if (state.hcaptchaWidgets[i].formEl === formEl) {
+          state.hcaptchaWidgets[i].resolve = resolve;
+          state.hcaptchaWidgets[i].reject = reject;
+          return state.hcaptchaWidgets[i];
+        }
+      }
+
+      var container = document.createElement('div');
+      var captchaBlock = document.createElement('div');
+      captchaBlock.className = 'submitButtonWrapper';
+      captchaBlock.setAttribute('data-cij-captcha-hcaptcha', 'true');
+      captchaBlock.appendChild(container);
+
+      var submitWrapper = formEl.querySelector('div.submitButtonWrapper');
+      if (submitWrapper && submitWrapper.parentNode) {
+        submitWrapper.parentNode.insertBefore(captchaBlock, submitWrapper);
+      } else {
+        formEl.appendChild(captchaBlock);
+      }
+
+      var entry = {
+        formEl: formEl,
+        widgetId: null,
+        resolve: resolve,
+        reject: reject,
+        token: null,
+        tokenAt: 0
+      };
+      state.hcaptchaWidgets.push(entry);
+
+      entry.widgetId = global.hcaptcha.render(container, {
+        sitekey: config.siteKey,
+        size: config.hcaptcha.size,
+        theme: config.hcaptcha.theme,
+        callback: function (token) {
+          entry.token = token;
+          entry.tokenAt = Date.now();
+
+          var captchaField = entry.formEl.querySelector('input[name="' + CIJ_FIELD_NAME + '"]');
+          if (captchaField) captchaField.value = token;
+          if (entry.resolve) entry.resolve(token);
+        },
+        'error-callback': function (error) {
+          console.error('[CIJ Captcha] hCaptcha error:', error);
+          if (entry.reject) entry.reject(new Error('[CIJ Captcha] hCaptcha error.'));
+        },
+        'expired-callback': function () {
+          entry.token = null;
+          entry.tokenAt = 0;
+
+          var captchaField = entry.formEl.querySelector('input[name="' + CIJ_FIELD_NAME + '"]');
+          if (captchaField) captchaField.value = '';
+
+          entry.resolve = null;
+          entry.reject = null;
+        }
+      });
+
+      return entry;
+    }
+
     function placeErrorElement(formEl, errorEl) {
       var turnstileBlock = formEl.querySelector('[data-cij-captcha-turnstile="true"]');
+      var hcaptchaBlock = formEl.querySelector('[data-cij-captcha-hcaptcha="true"]');
       var submitWrappers = formEl.querySelectorAll('div.submitButtonWrapper');
       var submitWrapper = null;
 
       for (var i = 0; i < submitWrappers.length; i++) {
-        if (submitWrappers[i] !== turnstileBlock) {
+        if (submitWrappers[i] !== turnstileBlock && submitWrappers[i] !== hcaptchaBlock) {
           submitWrapper = submitWrappers[i];
           break;
         }
@@ -399,10 +518,42 @@
       });
     }
 
+    function getHcaptchaToken(formEl, options) {
+      var forceFresh = !!(options && options.forceFresh);
+      return loadHcaptchaScript().then(function () {
+        return new Promise(function (resolve, reject) {
+          var entry = getOrCreateHcaptchaWidget(formEl, resolve, reject);
+
+          if (
+            !forceFresh &&
+            entry.token &&
+            entry.tokenAt &&
+            (Date.now() - entry.tokenAt) < config.hcaptcha.tokenReuseTimeout
+          ) {
+            resolve(entry.token);
+            return;
+          }
+
+          entry.token = null;
+          entry.tokenAt = 0;
+          global.hcaptcha.reset(entry.widgetId);
+          if (config.hcaptcha.size === 'invisible') {
+            global.hcaptcha.execute(entry.widgetId);
+          }
+        });
+      });
+    }
+
     function getToken(formEl, options) {
-      return config.provider === 'turnstile'
-        ? getTurnstileToken(formEl, options)
-        : getRecaptchaToken(getFormAction(formEl));
+      if (config.provider === 'turnstile') {
+        return getTurnstileToken(formEl, options);
+      }
+
+      if (config.provider === 'hcaptcha') {
+        return getHcaptchaToken(formEl, options);
+      }
+
+      return getRecaptchaToken(getFormAction(formEl));
     }
 
     function getErrorElement(formEl) {
@@ -684,6 +835,12 @@
           getOrCreateTurnstileWidget(formEl, null, null);
         });
       }
+
+      if (config.provider === 'hcaptcha') {
+        loadHcaptchaScript().then(function () {
+          getOrCreateHcaptchaWidget(formEl, null, null);
+        });
+      }
     }
 
     function findAndWireForms(root) {
@@ -721,8 +878,8 @@
         return api;
       }
 
-      if (config.provider !== 'turnstile' && config.provider !== 'recaptcha') {
-        throw new Error('[CIJ Captcha] Invalid provider. Use "turnstile" or "recaptcha".');
+      if (config.provider !== 'turnstile' && config.provider !== 'recaptcha' && config.provider !== 'hcaptcha') {
+        throw new Error('[CIJ Captcha] Invalid provider. Use "turnstile", "hcaptcha", or "recaptcha".');
       }
       if (!config.siteKey) {
         throw new Error('[CIJ Captcha] siteKey is required.');
@@ -731,7 +888,9 @@
         throw new Error('[CIJ Captcha] preSubmit.verifyEndpoint is required when preSubmit.enabled=true.');
       }
 
-      var eagerLoad = config.provider === 'turnstile' ? loadTurnstileScript : loadRecaptchaScript;
+      var eagerLoad = config.provider === 'turnstile'
+        ? loadTurnstileScript
+        : (config.provider === 'hcaptcha' ? loadHcaptchaScript : loadRecaptchaScript);
       if (config.eagerLoad) eagerLoad().catch(function (err) { console.warn(err); });
 
       document.addEventListener(CIJ_SUBMIT_EVENT, onCijFormSubmit);

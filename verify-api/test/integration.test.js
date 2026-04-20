@@ -194,3 +194,30 @@ test('turnstile uses TURNSTILE_SECRET_KEY', async () => {
     assert.equal(result.json.provider, 'turnstile');
   });
 });
+
+test('hcaptcha success uses HCAPTCHA_SECRET_KEY', async () => {
+  await withServer({
+    env: {
+      CORS_ORIGINS: 'http://localhost:8000',
+      HCAPTCHA_SECRET_KEY: 'hcaptcha-secret'
+    },
+    fetchImpl: createMockFetch(async (url, options) => {
+      assert.match(String(url), /api\.hcaptcha\.com\/siteverify/);
+      const body = String(options.body || '');
+      assert.match(body, /secret=hcaptcha-secret/);
+      return {
+        ok: true,
+        json: async () => ({ success: true })
+      };
+    })
+  }, async (baseUrl) => {
+    const result = await postJson(baseUrl, {
+      provider: 'hcaptcha',
+      token: 'h-token-1'
+    });
+
+    assert.equal(result.status, 200);
+    assert.equal(result.json.success, true);
+    assert.equal(result.json.provider, 'hcaptcha');
+  });
+});

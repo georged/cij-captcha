@@ -28,6 +28,7 @@ Copy `config.json.sample` to `config.json` and fill in your values. The format m
   },
   "recaptchaSecretKey": "YOUR_RECAPTCHA_SECRET_KEY",
   "turnstileSecretKey": "YOUR_TURNSTILE_SECRET_KEY",
+  "hcaptchaSecretKey": "YOUR_HCAPTCHA_SECRET_KEY",
   "enterpriseProjectId": "",
   "enterpriseApiKey": "",
   "enterpriseSiteKey": "",
@@ -36,7 +37,7 @@ Copy `config.json.sample` to `config.json` and fill in your values. The format m
 ```
 
 `recaptchaMode` is `"standard"` (default) or `"enterprise"`. Enterprise requires `enterpriseProjectId`, `enterpriseApiKey`, and `enterpriseSiteKey`.
-`recaptchaSecretKey` is the reCAPTCHA v3 secret key. `turnstileSecretKey` is the Cloudflare Turnstile secret key.
+`recaptchaSecretKey` is the reCAPTCHA v3 secret key. `turnstileSecretKey` is the Cloudflare Turnstile secret key. `hcaptchaSecretKey` is the hCaptcha secret key.
 
 ### Environment variables
 
@@ -46,6 +47,7 @@ Copy `config.json.sample` to `config.json` and fill in your values. The format m
 | `CORS_ORIGINS` | *(all)* | Comma-separated origin allowlist. Empty = allow all. |
 | `RECAPTCHA_SECRET_KEY` | | reCAPTCHA v3 secret key |
 | `TURNSTILE_SECRET_KEY` | | Cloudflare Turnstile secret key |
+| `HCAPTCHA_SECRET_KEY` | | hCaptcha secret key |
 | `RECAPTCHA_MODE` | `standard` | `standard` or `enterprise` |
 | `RECAPTCHA_ACTION_THRESHOLDS` | `cij_form_submit:0.5` | `action:threshold` pairs, comma-separated |
 | `RECAPTCHA_ENTERPRISE_API_KEY` | | Enterprise API key |
@@ -72,6 +74,8 @@ Request body:
   }
 }
 ```
+
+`provider` supports `recaptcha`, `turnstile`, and `hcaptcha`.
 
 `formId` is optional and forwarded for form-specific policy logic.
 `actionThresholds` is optional and overrides server defaults per request.
@@ -127,6 +131,7 @@ The script accepts CLI arguments and/or environment variables for API settings:
 - `CORS_ORIGINS`
 - `RECAPTCHA_SECRET_KEY`
 - `TURNSTILE_SECRET_KEY`
+- `HCAPTCHA_SECRET_KEY`
 - `RECAPTCHA_MODE`
 - `RECAPTCHA_ACTION_THRESHOLDS`
 - `RECAPTCHA_ENTERPRISE_API_KEY`
@@ -140,6 +145,7 @@ export RECAPTCHA_MODE=standard
 export RECAPTCHA_ACTION_THRESHOLDS="cij_form_submit:0.5"
 export RECAPTCHA_SECRET_KEY="<recaptcha-secret>"
 export TURNSTILE_SECRET_KEY="<turnstile-secret>"
+export HCAPTCHA_SECRET_KEY="<hcaptcha-secret>"
 
 ./scripts/deploy-verify-api-azure.sh \
   --subscription "<subscription-id-or-name>" \

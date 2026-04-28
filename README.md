@@ -143,6 +143,7 @@ Supported settings:
 - `hcaptcha`:
   - `size`: `'normal' | 'compact' | 'invisible'` (default `'normal'`)
   - `theme`: `'light' | 'dark'` (default `'light'`)
+  - `recaptchacompat`: `'on' | 'off'` (default `'off'`)
   - `tokenReuseTimeout`: number in ms (default `240000`)
 
 ### Strong model (recommended)

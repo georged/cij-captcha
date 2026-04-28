@@ -111,6 +111,7 @@
     hcaptcha: {
       size: 'normal',
       theme: 'light',
+      recaptchacompat: 'off',
       tokenReuseTimeout: 240000
     }
   };
@@ -237,6 +238,7 @@
 
     merged.size = pickAllowed(source.size, ['normal', 'compact', 'invisible'], defaults.size);
     merged.theme = pickAllowed(source.theme, ['light', 'dark'], defaults.theme);
+    merged.recaptchacompat = pickAllowed(source.recaptchacompat, ['on', 'off'], defaults.recaptchacompat);
     merged.tokenReuseTimeout = normalizedTimeout;
 
     return merged;
@@ -449,7 +451,8 @@
           return;
         }
         var s = document.createElement('script');
-        s.src = 'https://js.hcaptcha.com/1/api.js?render=explicit';
+        s.src = 'https://js.hcaptcha.com/1/api.js?render=explicit&recaptchacompat=' +
+          encodeURIComponent(config.hcaptcha.recaptchacompat);
         s.async = true;
         s.defer = true;
         s.onload = function () { resolve(); };
